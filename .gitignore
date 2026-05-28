@@ -2,6 +2,7 @@
 *.env
 .env
 .env.*
+request.log
 
 .github/copilot-instructions.md
 

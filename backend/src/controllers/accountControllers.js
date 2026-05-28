@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const db = require('../lib/db');
+const security = require('../lib/security');
 const helperController = require('./helperController');
 const {
     normalizeCounty,
@@ -491,6 +492,52 @@ function rejectAccount(req, res) {
     });
 }
 
+async function getSecurityOverview(req, res) {
+    if (!isAdminRequest(req)) {
+        res.statusCode = 403;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Forbidden' }));
+        return;
+    }
+
+    try {
+        const snapshot = security.getSecuritySnapshot(200);
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(snapshot));
+    } catch {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Failed to load security state' }));
+    }
+}
+
+async function clearSecurityState(req, res) {
+    if (!isAdminRequest(req)) {
+        res.statusCode = 403;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Forbidden' }));
+        return;
+    }
+
+    try {
+        const body = await helperController.parseJsonBody(req, MAX_JSON_BYTES);
+        const ip = String(body.ip || '').trim();
+
+        const cleared = ip
+            ? security.clearSecurityForIp(ip)
+            : security.clearAllSecurityState();
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ cleared, scope: ip ? 'ip' : 'all', ip: ip || null }));
+    } catch (error) {
+        res.statusCode = error.message === 'Payload too large' ? 413 : 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: error.message || 'Invalid JSON body' }));
+    }
+}
+
 module.exports = {
     login,
     createAccount,
@@ -503,4 +550,6 @@ module.exports = {
     getPendingAccounts,
     approveAccount,
     rejectAccount,
+    getSecurityOverview,
+    clearSecurityState,
 };

@@ -1,13 +1,24 @@
 const { createServer, get } = require('node:http');
 require('dotenv').config();
+const security = require('./src/lib/security');
 const { getSearch, postSearch } = require('./src/controllers/searchControllers');
 const { uploadFile, getUpload, deleteUpload } = require('./src/controllers/uploadControllers');
-const { login, createAccount, deleteAccount, getAccount, getSession, getCounties, getStates, updateAccount, getPendingAccounts, approveAccount, rejectAccount } = require('./src/controllers/accountControllers');
+const { login, createAccount, deleteAccount, getAccount, getSession, getCounties, getStates, updateAccount, getPendingAccounts, approveAccount, rejectAccount, getSecurityOverview, clearSecurityState } = require('./src/controllers/accountControllers');
 
 const hostname = '127.0.0.1';
 const port = 1337;
 
 const server = createServer((req, res) => {
+  const requestContext = security.beginRequest(req);
+  const originalEnd = res.end;
+  res.end = function patchedEnd(...args) {
+    if (!res.__securityLogged) {
+      res.__securityLogged = true;
+      security.completeRequest(req, res, requestContext);
+    }
+    return originalEnd.apply(this, args);
+  };
+
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -17,6 +28,24 @@ const server = createServer((req, res) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('Cache-Control', 'no-store');
+
+  const blockInfo = security.isBlocked(req);
+  if (blockInfo) {
+    res.statusCode = 403;
+    res.setHeader('Retry-After', Math.ceil((blockInfo.blockedUntil - Date.now()) / 1000));
+    res.end(JSON.stringify({ error: 'Request blocked due to suspicious activity' }));
+    return;
+  }
+
+  const rateLimit = security.checkRateLimit(req);
+  if (!rateLimit.allowed) {
+    res.statusCode = rateLimit.statusCode || 429;
+    if (rateLimit.retryAfterSeconds) {
+      res.setHeader('Retry-After', rateLimit.retryAfterSeconds);
+    }
+    res.end(JSON.stringify({ error: rateLimit.error || 'Too many requests' }));
+    return;
+  }
 
   const path = req.url.split('?')[0];
 
@@ -104,6 +133,16 @@ const server = createServer((req, res) => {
 
     if (path === '/admin/reject' && req.method === 'DELETE') {
       rejectAccount(req, res);
+      return;
+    }
+
+    if (path === '/admin/security' && req.method === 'GET') {
+      getSecurityOverview(req, res);
+      return;
+    }
+
+    if (path === '/admin/security' && req.method === 'DELETE') {
+      clearSecurityState(req, res);
       return;
     }
     res.statusCode = 404;
