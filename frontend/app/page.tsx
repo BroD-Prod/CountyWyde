@@ -1,20 +1,24 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { useAlert } from './components/AlertProvider';
+"use client";
+import { useEffect, useState } from "react";
+import { useAlert } from "./components/AlertProvider";
+import Loading from "./components/Loading";
 
 export default function Home() {
-  const [search, setSearch] = useState('');
-  const [result, setResult] = useState('');
-  const [county, setCounty] = useState('');
-  const [state, setState] = useState('');
+  const [search, setSearch] = useState("");
+  const [result, setResult] = useState("");
+  const [county, setCounty] = useState("");
+  const [state, setState] = useState("");
   const [counties, setCounties] = useState<string[]>([]);
-  const [states, setStates] = useState<{ name: string; abbreviation: string }[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [states, setStates] = useState<
+    { name: string; abbreviation: string }[]
+  >([]);
   const { showAlert } = useAlert();
 
   useEffect(() => {
     if (!state) {
       setCounties([]);
-      setCounty('');
+      setCounty("");
       return;
     }
 
@@ -31,7 +35,7 @@ export default function Home() {
   }, [state]);
 
   useEffect(() => {
-    fetch('http://localhost:1337/states')
+    fetch("http://localhost:1337/states")
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.states)) {
@@ -45,39 +49,46 @@ export default function Home() {
 
   const handleSearch = async () => {
     if (!search.trim()) {
-      showAlert('Please enter a search query', 'error');
+      showAlert("Please enter a search query", "error");
       return;
     }
 
     if (!county) {
-      showAlert('Please select a county', 'error');
+      showAlert("Please select a county", "error");
       return;
     }
 
     if (!state) {
-      showAlert('Please select a state', 'error');
+      showAlert("Please select a state", "error");
       return;
     }
 
-    const response = await fetch('http://localhost:1337/search', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ prompt: search, county, state }),
-    });
+    setIsSearching(true);
+    try {
+      const response = await fetch("http://localhost:1337/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt: search, county, state }),
+      });
 
-    const result = await response.json();
-    if (!response.ok) {
-      showAlert(result.error || 'Search failed', 'error');
-      return;
+      const result = await response.json();
+      if (!response.ok) {
+        showAlert(result.error || "Search failed", "error");
+        return;
+      }
+
+      const sourceList = Array.isArray(result.sources)
+        ? result.sources.map((s: { source: string }) => s.source).join(", ")
+        : "none";
+
+      setResult(`Result:\n\n${result.result}\n\nSources: ${sourceList}`);
+    } catch {
+      showAlert("Search failed", "error");
+    } finally {
+      setIsSearching(false);
     }
-
-    const sourceList = Array.isArray(result.sources)
-      ? result.sources.map((s: { source: string }) => s.source).join(', ')
-      : 'none';
-
-    setResult(`Result:\n\n${result.result}\n\nSources: ${sourceList}`);
   };
 
   return (
@@ -86,7 +97,9 @@ export default function Home() {
         <div className="overflow-hidden rounded-4xl border border-white/10 bg-white/92 p-6 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
           <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-slate-700 via-slate-500 to-slate-700" />
           <div className="mb-6">
-            <h2 className="mt-2 text-2xl font-semibold text-slate-900">Search CountyWyde</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+              Search CountyWyde
+            </h2>
           </div>
 
           <div className="space-y-4">
@@ -95,7 +108,7 @@ export default function Home() {
               value={state}
               onChange={(e) => {
                 setState(e.target.value);
-                setCounty('');
+                setCounty("");
               }}
             >
               <option value="">Select State</option>
@@ -126,17 +139,18 @@ export default function Home() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   handleSearch();
                 }
               }}
             />
 
             <button
-              className="w-full rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
               onClick={handleSearch}
+              disabled={isSearching}
             >
-              Search
+              {isSearching ? <Loading inline label="Searching..." /> : "Search"}
             </button>
           </div>
 

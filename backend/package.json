@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "backfill:embeddings": "node src/scripts/backfillEmbeddings.js",
     "lint": "eslint",
     "format": "prettier --write .",
     "test": "playwright test"

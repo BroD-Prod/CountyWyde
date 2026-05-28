@@ -1,11 +1,16 @@
 require('dotenv').config();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { embedText, cosineSimilarity } = require('../lib/embeddings');
 const { readUploads } = require('../lib/uploadStore');
 const helperController = require('./helperController');
 const { normalizeCounty, isRegisteredState } = require('../lib/countyRegistry');
 
 const genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const MAX_JSON_BYTES = 1 * 1024 * 1024;
+const RRF_K = 60;
+const MAX_LEXICAL = 10;
+const MAX_VECTOR = 10;
+const MIN_CONFIDENCE_SCORE = 1 / (RRF_K + MAX_LEXICAL + 1);
 
 function tokenize(text) {
     return (text || '')
@@ -33,8 +38,69 @@ function rankByOverlap(records, prompt, max = 5) {
         })
         .filter((item) => item.score > 0)
         .sort((a, b) => b.score - a.score)
-        .slice(0, max)
-        .map((item) => item.record);
+        .slice(0, max);
+}
+
+async function embedPrompt(prompt) {
+    return embedText(prompt);
+}
+
+function rankByVector(records, queryEmbedding, max = 5) {
+    if (!queryEmbedding) {
+        return [];
+    }
+
+    return records
+        .map((record) => ({
+            record,
+            score: cosineSimilarity(record.embedding, queryEmbedding),
+        }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, max);
+}
+
+function fuseWithRrf(lexicalMatches, vectorMatches, max = 5) {
+    const scores = new Map();
+
+    lexicalMatches.forEach((entry, index) => {
+        const record = entry.record;
+        const current = scores.get(record.id) || { record, score: 0 };
+        current.score += 1 / (RRF_K + index + 1);
+        scores.set(record.id, current);
+    });
+
+    vectorMatches.forEach((entry, index) => {
+        const record = entry.record;
+        const current = scores.get(record.id) || { record, score: 0 };
+        current.score += 1 / (RRF_K + index + 1);
+        scores.set(record.id, current);
+    });
+
+    return Array.from(scores.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, max);
+}
+
+async function rankHybrid(records, prompt, max = 5) {
+    const lexicalMatches = rankByOverlap(records, prompt, MAX_LEXICAL);
+
+    let vectorMatches = [];
+    try {
+        const queryEmbedding = await embedPrompt(prompt);
+        vectorMatches = rankByVector(records, queryEmbedding, MAX_VECTOR);
+    } catch {
+        vectorMatches = [];
+    }
+
+    if (vectorMatches.length === 0) {
+        return lexicalMatches.slice(0, max).map((entry, index) => ({
+            record: entry.record,
+            score: 1 / (RRF_K + index + 1),
+        }));
+    }
+
+    return fuseWithRrf(lexicalMatches, vectorMatches, max);
 }
 
 function extractRelevantLines(matches, prompt, maxLines = 8) {
@@ -42,7 +108,6 @@ function extractRelevantLines(matches, prompt, maxLines = 8) {
     if (promptTokens.length === 0) {
         return '';
     }
-
     const scored = [];
 
     for (const match of matches) {
@@ -142,14 +207,20 @@ async function postSearch(req, res) {
         }
 
         const uploads = await readUploads();
-        const countyUploads = uploads.filter((item) => normalizeCounty(item.county) === county);
-        const matches = rankByOverlap(countyUploads, prompt);
+        const normalizedState = state.trim().toLowerCase();
+        const countyUploads = uploads.filter((item) => {
+            const itemState = String(item.state || '').trim().toLowerCase();
+            return normalizeCounty(item.county) === county && itemState === normalizedState;
+        });
+        const rankedMatches = await rankHybrid(countyUploads, prompt);
 
-        if (matches.length === 0) {
+        if (rankedMatches.length === 0 || rankedMatches[0].score < MIN_CONFIDENCE_SCORE) {
             res.statusCode = 200;
             res.end(JSON.stringify({ result: 'I do not have that information.', sources: [] }));
             return;
         }
+
+        const matches = rankedMatches.map((item) => item.record);
 
         const context = matches
             .map((item, index) => `[${index + 1}] (${item.source}) ${item.text}`)

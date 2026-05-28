@@ -1,5 +1,6 @@
 const { readUploads, writeUploads } = require('../lib/uploadStore');
 const { parseFile } = require('../lib/fileParser');
+const { attachEmbeddings } = require('../lib/embeddings');
 const helperController = require('./helperController');
 const { normalizeCounty } = require('../lib/countyRegistry');
 
@@ -7,6 +8,7 @@ const maxUploadSize = 10 * 1024 * 1024; // 10 MB per file
 const MAX_JSON_BYTES = 25 * 1024 * 1024; // account for base64 overhead
 const CHUNK_SIZE = 1200;
 const CHUNK_OVERLAP = 200;
+const EMBEDDING_CONCURRENCY = 4;
 
 function createId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -72,7 +74,7 @@ function chunkText(rawText, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
     return chunks;
 }
 
-function normalizeParsed(parsed, source, county) {
+function normalizeParsed(parsed, source, county, state) {
     const sourceName = source || parsed?.metadata?.name || 'unknown';
 
     if (Array.isArray(parsed.structured)) {
@@ -84,6 +86,7 @@ function normalizeParsed(parsed, source, county) {
             metadata: parsed.metadata,
             structured: item,
             county,
+            state,
             rowIndex: index,
             chunkIndex: 0,
             chunkCount: 1,
@@ -108,6 +111,7 @@ function normalizeParsed(parsed, source, county) {
         metadata: parsed.metadata,
         structured: parsed.structured,
         county,
+        state,
         chunkIndex: index,
         chunkCount,
         createdAt: new Date().toISOString(),
@@ -116,7 +120,7 @@ function normalizeParsed(parsed, source, county) {
 
 async function uploadFile(req, res) {
     try {
-        const user = helperController.getAuthenticatedUser(req, { includeState: false, cleanupExpired: true });
+        const user = helperController.getAuthenticatedUser(req, { includeState: true, cleanupExpired: true });
         if (!user) {
             res.statusCode = 401;
             res.end(JSON.stringify({ error: 'You must be signed in to upload' }));
@@ -125,11 +129,12 @@ async function uploadFile(req, res) {
 
         const payload = await helperController.parseJsonBody(req, MAX_JSON_BYTES);
         const county = normalizeCounty(user.county);
+        const state = String(user.state_abbreviation || user.state_name || '').trim();
         const existing = await readUploads();
 
-        if (!county) {
+        if (!county || !state) {
             res.statusCode = 400;
-            res.end(JSON.stringify({ error: 'No county found on your account' }));
+            res.end(JSON.stringify({ error: 'No county/state found on your account' }));
             return;
         }
 
@@ -183,9 +188,11 @@ async function uploadFile(req, res) {
             }
 
             normalized = normalized.concat(
-                normalizeParsed(parsed, payload.source || inputFile.name, county)
+                normalizeParsed(parsed, payload.source || inputFile.name, county, state)
             );
         }
+
+        await attachEmbeddings(normalized, { concurrency: EMBEDDING_CONCURRENCY });
 
         if (normalized.length === 0) {
             res.statusCode = 400;
