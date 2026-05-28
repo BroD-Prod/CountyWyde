@@ -1,0 +1,23 @@
+{
+  "name": "countywyde-backend",
+  "version": "1.0.0",
+  "description": "Backend for CountyWyde application",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "lint": "eslint",
+    "format": "prettier --write .",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.10.0",
+    "csv-parse": "^6.2.1",
+    "dotenv": "^17.4.2",
+    "mammoth": "^1.12.0",
+    "node": "^24.16.0",
+    "pdf-parse": "^2.4.5"
+  }
+}
