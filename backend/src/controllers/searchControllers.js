@@ -20,6 +20,70 @@ function tokenize(text) {
         .filter(Boolean);
 }
 
+function getSupportingSources(matches, answerText, fallback = 1) {
+    const answer = String(answerText || '').trim();
+    if (!answer) {
+        return matches.slice(0, fallback);
+    }
+
+    const answerTokens = Array.from(
+        new Set(tokenize(answer).filter((token) => token.length > 2))
+    );
+
+    if (answerTokens.length === 0) {
+        return matches.slice(0, fallback);
+    }
+
+    const tokenDocumentFrequency = new Map();
+
+    for (const record of matches) {
+        const tokenSet = new Set(tokenize(String(record.text || '')));
+        for (const token of answerTokens) {
+            if (tokenSet.has(token)) {
+                tokenDocumentFrequency.set(token, (tokenDocumentFrequency.get(token) || 0) + 1);
+            }
+        }
+    }
+
+    const totalDocs = Math.max(matches.length, 1);
+    const scored = matches
+        .map((record) => {
+            const tokenSet = new Set(tokenize(String(record.text || '')));
+            let weightedOverlap = 0;
+            let overlapCount = 0;
+
+            for (const token of answerTokens) {
+                if (!tokenSet.has(token)) {
+                    continue;
+                }
+
+                overlapCount += 1;
+                const df = tokenDocumentFrequency.get(token) || 0;
+                const idf = Math.log((totalDocs + 1) / (df + 1)) + 1;
+                weightedOverlap += idf;
+            }
+
+            return {
+                record,
+                weightedOverlap,
+                overlapCount,
+            };
+        })
+        .filter((item) => item.overlapCount > 0)
+        .sort((a, b) => {
+            if (b.weightedOverlap !== a.weightedOverlap) {
+                return b.weightedOverlap - a.weightedOverlap;
+            }
+            return b.overlapCount - a.overlapCount;
+        });
+
+    if (scored.length === 0) {
+        return matches.slice(0, fallback);
+    }
+
+    return [scored[0].record];
+}
+
 function rankByOverlap(records, prompt, max = 5) {
     const promptTokens = new Set(tokenize(prompt));
 
@@ -208,10 +272,18 @@ async function postSearch(req, res) {
 
         const uploads = await readUploads();
         const normalizedState = state.trim().toLowerCase();
-        const countyUploads = uploads.filter((item) => {
-            const itemState = String(item.state || '').trim().toLowerCase();
-            return normalizeCounty(item.county) === county && itemState === normalizedState;
-        });
+        const countyCandidates = uploads.filter(
+            (item) => normalizeCounty(item.county) === county
+        );
+        const hasStateAwareRecords = countyCandidates.some((item) =>
+            Boolean(String(item.state || '').trim())
+        );
+        const countyUploads = hasStateAwareRecords
+            ? countyCandidates.filter((item) => {
+                const itemState = String(item.state || '').trim().toLowerCase();
+                return itemState === normalizedState;
+            })
+            : countyCandidates;
         const rankedMatches = await rankHybrid(countyUploads, prompt);
 
         if (rankedMatches.length === 0 || rankedMatches[0].score < MIN_CONFIDENCE_SCORE) {
@@ -246,11 +318,15 @@ async function postSearch(req, res) {
             }
         }
 
+        const sources = /^i do not have that information\.?$/i.test(String(text).trim())
+            ? []
+            : getSupportingSources(matches, text);
+
         res.statusCode = 200;
         res.end(
             JSON.stringify({
                 result: text,
-                sources: matches.map((item) => ({ id: item.id, source: item.source })),
+                sources: sources.map((item) => ({ id: item.id, source: item.source })),
             })
         );
     } catch (error) {
