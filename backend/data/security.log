@@ -1,0 +1,2 @@
+{"ts":"2026-06-04T17:25:26.790Z","event":"suspicion_score","ip":"127.0.0.1","reason":"not_found_scanning","delta":1,"score":1,"resetAt":"2026-06-04T17:35:26.790Z"}
+{"ts":"2026-06-04T17:30:42.515Z","event":"suspicion_score","ip":"127.0.0.1","reason":"not_found_scanning","delta":1,"score":2,"resetAt":"2026-06-04T17:35:26.790Z"}

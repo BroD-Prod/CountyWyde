@@ -3,9 +3,17 @@ import { useEffect, useState } from "react";
 import { useAlert } from "./components/AlertProvider";
 import Loading from "./components/Loading";
 
+type SearchSource = {
+  id: string;
+  source: string;
+  documentId?: string | null;
+  originalFileName?: string | null;
+};
+
 export default function Home() {
   const [search, setSearch] = useState("");
   const [result, setResult] = useState("");
+  const [sources, setSources] = useState<SearchSource[]>([]);
   const [county, setCounty] = useState("");
   const [state, setState] = useState("");
   const [counties, setCounties] = useState<string[]>([]);
@@ -79,11 +87,19 @@ export default function Home() {
         return;
       }
 
-      const sourceList = Array.isArray(result.sources)
-        ? result.sources.map((s: { source: string }) => s.source).join(", ")
-        : "none";
+      const parsedSources: SearchSource[] = Array.isArray(result.sources)
+        ? result.sources.map((s: SearchSource) => ({
+          id: String(s.id || ""),
+          source: String(s.source || "Unknown source"),
+          documentId: s.documentId ? String(s.documentId) : null,
+          originalFileName: s.originalFileName
+            ? String(s.originalFileName)
+            : null,
+        }))
+        : [];
 
-      setResult(`Result:\n\n${result.result}\n\nSources: ${sourceList}`);
+      setResult(String(result.result || ""));
+      setSources(parsedSources);
     } catch {
       showAlert("Search failed", "error");
     } finally {
@@ -155,9 +171,49 @@ export default function Home() {
           </div>
 
           {result && (
-            <pre className="mt-6 whitespace-pre-wrap rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm leading-6 text-slate-800 shadow-sm">
-              {result}
-            </pre>
+            <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm leading-6 text-slate-800 shadow-sm">
+              <p className="font-semibold text-slate-700">Result:</p>
+              <p className="whitespace-pre-wrap">{result}</p>
+
+              <div className="space-y-3">
+                <p className="font-semibold text-slate-700">Sources:</p>
+                {sources.length === 0 && <p>none</p>}
+
+                {sources.map((source) => {
+                  const canPreview = Boolean(source.documentId || source.source);
+                  const previewSrc = source.documentId
+                    ? `http://localhost:1337/documents/${encodeURIComponent(source.documentId)}/original`
+                    : `http://localhost:1337/documents/original?source=${encodeURIComponent(source.source)}&county=${encodeURIComponent(county)}&state=${encodeURIComponent(state)}`;
+
+                  return (
+                    <div
+                      key={`${source.id}-${source.source}`}
+                      className="rounded-xl border border-slate-200 bg-white p-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-slate-700">
+                          {source.source}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={!canPreview}
+                          onClick={() => window.open(previewSrc, "_blank", "noopener,noreferrer")}
+                          className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                        >
+                          Open PDF
+                        </button>
+                      </div>
+
+                      {!canPreview && (
+                        <p className="mt-2 text-xs text-slate-500">
+                          Preview unavailable for this source.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       </section>
