@@ -83,7 +83,7 @@ export default function CreateAccount() {
             Create Account
           </h1>
           <p className="mt-3 text-sm leading-7 text-slate-500">
-            Set up your CountyWyde account to search and upload records.
+            Set up your CountyWyde account to upload records.
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={handleCreateAccount}>

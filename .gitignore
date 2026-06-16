@@ -3,6 +3,8 @@
 .env
 .env.*
 request.log
+security.log
+/documents/*
 
 .github/copilot-instructions.md
 
