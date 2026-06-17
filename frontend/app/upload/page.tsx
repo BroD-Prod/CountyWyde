@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useAlert } from "../components/AlertProvider";
 
-const API_BASE = process.env.API_BASE || "http://localhost:1337";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:1337";
 
 const POLL_INTERVAL_MS = 2500;
 const DOCUMENT_ALLOWED_TYPES = new Set([
