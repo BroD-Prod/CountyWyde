@@ -398,7 +398,9 @@ async function uploadVideoFile(req, res) {
                 videoPath: filePath,
                 extension,
                 contentType,
-                sourceName: incomingName || filename,
+                sourceName: path
+                    .basename(incomingName || filename)
+                    .replace(/[\r\n"]/g, "_"),
                 size: bytesWritten,
                 county: normalizeCounty(user.county),
                 state: String(user.state_abbreviation || user.state_name || "").trim(),
