@@ -538,6 +538,9 @@ async function deleteUpload(req, res) {
 }
 
 module.exports = {
+    createId,
+    chunkText,
+    normalizeChunkText,
     uploadFile,
     getUpload,
     getOriginalDocument,
