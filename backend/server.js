@@ -11,7 +11,7 @@ const {
   getOriginalDocument,
   getOriginalDocumentBySource,
   deleteUpload,
-} = require("./src/controllers/uploadControllers");
+} = require("./src/controllers/uploadFilesControllers");
 const {
   login,
   createAccount,
@@ -27,6 +27,12 @@ const {
   getSecurityOverview,
   clearSecurityState,
 } = require("./src/controllers/accountControllers");
+
+const {
+  uploadVideoFile,
+  getVideoStatus,
+  getVideoTranscript,
+} = require("./src/controllers/uploadVideoControllers");
 
 const hostname = "127.0.0.1";
 const port = 1337;
@@ -49,7 +55,10 @@ const server = createServer((req, res) => {
     "Access-Control-Allow-Methods",
     "GET, POST, PATCH, DELETE, OPTIONS",
   );
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Admin-Key");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename",
+  );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
@@ -109,6 +118,25 @@ const server = createServer((req, res) => {
 
     if (path === "/upload" && req.method === "DELETE") {
       deleteUpload(req, res);
+      return;
+    }
+
+    if (path === "/upload/video" && req.method === "POST") {
+      uploadVideoFile(req, res);
+      return;
+    }
+
+    const videoStatusMatch = path.match(/^\/upload\/video\/([^/]+)\/status$/);
+    if (videoStatusMatch && req.method === "GET") {
+      getVideoStatus(req, res, decodeURIComponent(videoStatusMatch[1]));
+      return;
+    }
+
+    const videoTranscriptMatch = path.match(
+      /^\/upload\/video\/([^/]+)\/transcript$/,
+    );
+    if (videoTranscriptMatch && req.method === "GET") {
+      getVideoTranscript(req, res, decodeURIComponent(videoTranscriptMatch[1]));
       return;
     }
 

@@ -10,6 +10,13 @@ type SearchSource = {
   originalFileName?: string | null;
 };
 
+function isPdfSource(source: SearchSource): boolean {
+  const name = String(source.originalFileName || source.source || "")
+    .trim()
+    .toLowerCase();
+  return name.endsWith(".pdf");
+}
+
 export default function Home() {
   const [search, setSearch] = useState("");
   const [result, setResult] = useState("");
@@ -180,7 +187,7 @@ export default function Home() {
                 {sources.length === 0 && <p>none</p>}
 
                 {sources.map((source) => {
-                  const canPreview = Boolean(source.documentId || source.source);
+                  const canPreview = isPdfSource(source);
                   const previewSrc = source.documentId
                     ? `http://localhost:1337/documents/${encodeURIComponent(source.documentId)}/original`
                     : `http://localhost:1337/documents/original?source=${encodeURIComponent(source.source)}&county=${encodeURIComponent(county)}&state=${encodeURIComponent(state)}`;
@@ -194,19 +201,20 @@ export default function Home() {
                         <p className="text-sm font-medium text-slate-700">
                           {source.source}
                         </p>
-                        <button
-                          type="button"
-                          disabled={!canPreview}
-                          onClick={() => window.open(previewSrc, "_blank", "noopener,noreferrer")}
-                          className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600 disabled:cursor-not-allowed disabled:bg-slate-300"
-                        >
-                          Open PDF
-                        </button>
+                        {canPreview && (
+                          <button
+                            type="button"
+                            onClick={() => window.open(previewSrc, "_blank", "noopener,noreferrer")}
+                            className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600"
+                          >
+                            Open PDF
+                          </button>
+                        )}
                       </div>
 
                       {!canPreview && (
                         <p className="mt-2 text-xs text-slate-500">
-                          Preview unavailable for this source.
+                          PDF preview unavailable for this source.
                         </p>
                       )}
                     </div>

@@ -238,6 +238,23 @@ function extractRelevantLines(matches, prompt, maxLines = 8) {
   return selected.join("\n");
 }
 
+function dedupeMatchesBySource(matches) {
+  const seenSources = new Set();
+  const deduped = [];
+
+  for (const match of matches) {
+    const sourceKey = String(match?.source || "").trim().toLowerCase();
+    if (!sourceKey || seenSources.has(sourceKey)) {
+      continue;
+    }
+
+    seenSources.add(sourceKey);
+    deduped.push(match);
+  }
+
+  return deduped;
+}
+
 function findPdfDocumentBySource(records, sourceName) {
   const normalizedSource = String(sourceName || "").trim().toLowerCase();
   if (!normalizedSource) {
@@ -335,8 +352,9 @@ async function postSearch(req, res) {
     }
 
     const matches = rankedMatches.map((item) => item.record);
+    const contextMatches = dedupeMatchesBySource(matches);
 
-    const context = matches
+    const context = contextMatches
       .map((item, index) => `[${index + 1}] (${item.source}) ${item.text}`)
       .join("\n\n");
 
@@ -354,7 +372,7 @@ async function postSearch(req, res) {
     let text = result.response.text();
 
     if (/^i do not have that information\.?$/i.test(String(text).trim())) {
-      const fallback = extractRelevantLines(matches, prompt);
+      const fallback = extractRelevantLines(contextMatches, prompt);
       if (fallback) {
         text = fallback;
       }
@@ -364,7 +382,7 @@ async function postSearch(req, res) {
       String(text).trim(),
     )
       ? []
-      : getSupportingSources(matches, text);
+      : getSupportingSources(contextMatches, text);
 
     res.statusCode = 200;
     const responseSources = sources.map((item) => {
