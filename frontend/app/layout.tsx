@@ -32,30 +32,61 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-slate-950 text-slate-100">
         <AlertProvider>
-          {" "}
-          <nav className="sticky w-full p-4 bg-slate-950/75 text-white flex justify-between items-center top-0 z-40 border-b border-white/10 backdrop-blur-xl">
-            <div className="text-2xl font-bold">CountyWyde</div>
-            <div className="space-x-4">
-              <Link
-                href="/"
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white"
-              >
-                Home
-              </Link>
-              <Link
-                href="/about"
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white"
-              >
-                About
-              </Link>
-              <Link
-                href="/contact"
-                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-slate-200 transition hover:bg-white/10 hover:text-white"
-              >
-                Contact
-              </Link>
+          <nav className="sticky top-0 z-40 w-full border-b border-slate-800 bg-slate-950 p-4 text-white">
+            <div className="mx-auto flex w-full max-w-6xl items-center justify-between">
+              <div className="text-2xl font-bold">CountyWyde</div>
+              {/* Desktop Navigation */}
+              <div className="hidden items-center gap-3 sm:flex">
+                <Link
+                  href="/"
+                  className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                >
+                  Home
+                </Link>
+                <Link
+                  href="/about"
+                  className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                >
+                  About
+                </Link>
+                <Link
+                  href="/contact"
+                  className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                >
+                  Contact
+                </Link>
+                <NavAuthLink />
+              </div>
 
-              <NavAuthLink />
+              {/* Mobile Navigation */}
+              <details className="relative sm:hidden">
+                <summary className="cursor-pointer list-none rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 transition hover:bg-slate-700 hover:text-white">
+                  Menu
+                </summary>
+                <div className="absolute right-0 mt-2 flex w-64 flex-col gap-2 rounded-2xl border border-slate-700 bg-slate-900 p-3 shadow-xl">
+                  <Link
+                    href="/"
+                    className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-center text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                  >
+                    Home
+                  </Link>
+                  <Link
+                    href="/about"
+                    className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-center text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                  >
+                    About
+                  </Link>
+                  <Link
+                    href="/contact"
+                    className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-center text-slate-200 transition hover:bg-slate-700 hover:text-white"
+                  >
+                    Contact
+                  </Link>
+                  <div className="flex flex-col gap-2 text-center">
+                    <NavAuthLink />
+                  </div>
+                </div>
+              </details>
             </div>
           </nav>
           {children}
