@@ -34,8 +34,8 @@ const {
   getVideoTranscript,
 } = require("./src/controllers/uploadVideoControllers");
 
-const hostname = "127.0.0.1";
-const port = 1337;
+const hostname = process.env.HOSTNAME;
+const port = process.env.PORT;
 
 const server = createServer((req, res) => {
   const requestContext = security.beginRequest(req);
@@ -48,8 +48,9 @@ const server = createServer((req, res) => {
     return originalEnd.apply(this, args);
   };
 
+  const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:3000";
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
+  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader(
     "Access-Control-Allow-Methods",

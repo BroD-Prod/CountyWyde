@@ -1,7 +1,8 @@
 require("dotenv").config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { embedText, cosineSimilarity } = require("../lib/embeddings");
-const { readUploads } = require("../lib/uploadStore");
+const { searchByVector: milvusSearch } = require("../lib/vectorStore");
+const { readChunks } = require("../lib/uploadStore");
 const helperController = require("./helperController");
 const { normalizeCounty, isRegisteredState } = require("../lib/countyRegistry");
 
@@ -158,13 +159,36 @@ function fuseWithRrf(lexicalMatches, vectorMatches, max = 5) {
     .slice(0, max);
 }
 
-async function rankHybrid(records, prompt, max = 5) {
+async function rankVectorWithMilvus(records, queryEmbedding, county, state, max) {
+  try {
+    const hits = await milvusSearch(queryEmbedding, { county, state }, max);
+    const recordMap = new Map(records.map((r) => [String(r.id), r]));
+    return hits
+      .map((hit) => ({ record: recordMap.get(hit.chunkId), score: hit.score }))
+      .filter((item) => item.record !== undefined);
+  } catch {
+    // Graceful degradation: fall back to brute-force cosine similarity
+    return rankByVector(records, queryEmbedding, max);
+  }
+}
+
+async function rankHybrid(records, prompt, max = 5, { county, state } = {}) {
   const lexicalMatches = rankByOverlap(records, prompt, MAX_LEXICAL);
 
   let vectorMatches = [];
   try {
     const queryEmbedding = await embedPrompt(prompt);
-    vectorMatches = rankByVector(records, queryEmbedding, MAX_VECTOR);
+    if (county && state) {
+      vectorMatches = await rankVectorWithMilvus(
+        records,
+        queryEmbedding,
+        county,
+        state,
+        MAX_VECTOR,
+      );
+    } else {
+      vectorMatches = rankByVector(records, queryEmbedding, MAX_VECTOR);
+    }
   } catch {
     vectorMatches = [];
   }
@@ -319,23 +343,8 @@ async function postSearch(req, res) {
       return;
     }
 
-    const uploads = await readUploads();
-    const normalizedState = state.trim().toLowerCase();
-    const countyCandidates = uploads.filter(
-      (item) => normalizeCounty(item.county) === county,
-    );
-    const hasStateAwareRecords = countyCandidates.some((item) =>
-      Boolean(String(item.state || "").trim()),
-    );
-    const countyUploads = hasStateAwareRecords
-      ? countyCandidates.filter((item) => {
-        const itemState = String(item.state || "")
-          .trim()
-          .toLowerCase();
-        return itemState === normalizedState;
-      })
-      : countyCandidates;
-    const rankedMatches = await rankHybrid(countyUploads, prompt);
+    const countyUploads = readChunks({ county, state });
+    const rankedMatches = await rankHybrid(countyUploads, prompt, MAX_VECTOR, { county, state });
 
     if (
       rankedMatches.length === 0 ||
@@ -361,22 +370,21 @@ async function postSearch(req, res) {
     const model = genAi.getGenerativeModel({
       model: "gemini-2.5-flash",
       systemInstruction:
-        "Answer only using the provided context. If the answer is not present, reply exactly: I do not have that information.",
+`You are an expert assistant tasked with rewriting and summarizing source text into clean, professional, and completely original phrasing.
+
+    CRITICAL RULES:
+    1. STRICT PARAPHRASING: You must completely rephrase the information using your own words, sentence structures, and vocabulary. Never copy blocks of text, distinct clauses, or unique sentence layouts directly from the source. 
+    2. FACTUAL RIGOR: While you must completely change the wording, you must remain 100% faithful to the facts in the provided context. Do not invent details, extrapolate, or bring in outside knowledge.
+    3. FALLBACK: If the provided context does not contain information to answer the prompt, reply exactly: "I do not have that information."
+    4. STYLE: Present the summary in a professional, objective tone. Use clean bullet points or concise paragraphs rather than mimicking the conversational style of a transcript.`,
       generationConfig: {
-        temperature: 0.2,
+        temperature: 0.4,
       },
     });
 
     const groundedPrompt = `Context:\n${context}\n\nQuestion:\n${prompt}`;
     const result = await model.generateContent(groundedPrompt);
     let text = result.response.text();
-
-    if (/^i do not have that information\.?$/i.test(String(text).trim())) {
-      const fallback = extractRelevantLines(contextMatches, prompt);
-      if (fallback) {
-        text = fallback;
-      }
-    }
 
     const sources = /^i do not have that information\.?$/i.test(
       String(text).trim(),

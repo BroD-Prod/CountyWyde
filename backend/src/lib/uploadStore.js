@@ -1,37 +1,186 @@
-const fs = require("node:fs/promises");
-const path = require("node:path");
+const db = require("./db");
 
-const DATA_FILE = path.join(__dirname, "../../data/uploads.json");
+// ---------------------------------------------------------------------------
+// Row ↔ chunk object conversion
+// ---------------------------------------------------------------------------
 
-async function ensureDataFile() {
-  const dataDir = path.dirname(DATA_FILE);
-  await fs.mkdir(dataDir, { recursive: true });
-
-  try {
-    await fs.access(DATA_FILE);
-  } catch {
-    await fs.writeFile(DATA_FILE, "[]", "utf8");
-  }
+function rowToChunk(row) {
+  return {
+    id: row.id,
+    source: row.source,
+    text: row.text,
+    parsedType: row.parsed_type,
+    metadata: row.metadata ? JSON.parse(row.metadata) : null,
+    structured: row.structured ? JSON.parse(row.structured) : null,
+    county: row.county,
+    state: row.state,
+    chunkIndex: row.chunk_index,
+    chunkCount: row.chunk_count,
+    ...(row.row_index != null && { rowIndex: row.row_index }),
+    ...(row.document_id != null && { documentId: row.document_id }),
+    ...(row.original_file_name != null && { originalFileName: row.original_file_name }),
+    ...(row.original_mime_type != null && { originalMimeType: row.original_mime_type }),
+    ...(row.original_size != null && { originalSize: row.original_size }),
+    ...(row.original_stored_filename != null && { originalStoredFilename: row.original_stored_filename }),
+    ...(row.original_stored_path != null && { originalStoredPath: row.original_stored_path }),
+    ...(row.original_stored_at != null && { originalStoredAt: row.original_stored_at }),
+    embedding: row.embedding ? JSON.parse(row.embedding) : null,
+    createdAt: row.created_at,
+  };
 }
 
-async function readUploads() {
-  await ensureDataFile();
-  const raw = await fs.readFile(DATA_FILE, "utf8");
-
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function chunkToRow(chunk) {
+  return {
+    id: String(chunk.id),
+    source: String(chunk.source || ""),
+    text: String(chunk.text || ""),
+    parsed_type: String(chunk.parsedType || "text"),
+    metadata: chunk.metadata != null ? JSON.stringify(chunk.metadata) : null,
+    structured: chunk.structured != null ? JSON.stringify(chunk.structured) : null,
+    county: String(chunk.county || ""),
+    state: String(chunk.state || ""),
+    chunk_index: chunk.chunkIndex ?? 0,
+    chunk_count: chunk.chunkCount ?? 1,
+    row_index: chunk.rowIndex ?? null,
+    document_id: chunk.documentId ?? null,
+    original_file_name: chunk.originalFileName ?? null,
+    original_mime_type: chunk.originalMimeType ?? null,
+    original_size: chunk.originalSize ?? null,
+    original_stored_filename: chunk.originalStoredFilename ?? null,
+    original_stored_path: chunk.originalStoredPath ?? null,
+    original_stored_at: chunk.originalStoredAt ?? null,
+    embedding: Array.isArray(chunk.embedding) ? JSON.stringify(chunk.embedding) : null,
+    created_at: chunk.createdAt ?? new Date().toISOString(),
+  };
 }
 
-async function writeUploads(uploads) {
-  await ensureDataFile();
-  await fs.writeFile(DATA_FILE, JSON.stringify(uploads, null, 2), "utf8");
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Read chunks with optional filters. All args are optional.
+ * @param {{ county?: string, state?: string, documentId?: string, source?: string }} filter
+ * @returns {object[]}
+ */
+function readChunks({ county, state, documentId, source } = {}) {
+  const conditions = [];
+  const params = [];
+
+  if (county) {
+    conditions.push("LOWER(county) = LOWER(?)");
+    params.push(county);
+  }
+  if (state) {
+    conditions.push("LOWER(state) = LOWER(?)");
+    params.push(state);
+  }
+  if (documentId) {
+    conditions.push("document_id = ?");
+    params.push(documentId);
+  }
+  if (source) {
+    conditions.push("LOWER(source) = LOWER(?)");
+    params.push(source);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const rows = db.prepare(`SELECT * FROM upload_chunks ${where} ORDER BY created_at ASC`).all(...params);
+  return rows.map(rowToChunk);
+}
+
+/**
+ * Insert an array of chunks in a single transaction. Skips duplicates by id.
+ * @param {object[]} chunks
+ */
+function insertChunks(chunks) {
+  if (!Array.isArray(chunks) || chunks.length === 0) return;
+
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO upload_chunks (
+      id, source, text, parsed_type, metadata, structured,
+      county, state, chunk_index, chunk_count, row_index,
+      document_id, original_file_name, original_mime_type, original_size,
+      original_stored_filename, original_stored_path, original_stored_at,
+      embedding, created_at
+    ) VALUES (
+      @id, @source, @text, @parsed_type, @metadata, @structured,
+      @county, @state, @chunk_index, @chunk_count, @row_index,
+      @document_id, @original_file_name, @original_mime_type, @original_size,
+      @original_stored_filename, @original_stored_path, @original_stored_at,
+      @embedding, @created_at
+    )
+  `);
+
+  const insertMany = db.transaction((rows) => {
+    for (const row of rows) stmt.run(row);
+  });
+
+  insertMany(chunks.map(chunkToRow));
+}
+
+/**
+ * Update the stored embedding for a single chunk.
+ * @param {string} id
+ * @param {number[]} embedding
+ */
+function updateChunkEmbedding(id, embedding) {
+  const value = Array.isArray(embedding) ? JSON.stringify(embedding) : null;
+  db.prepare("UPDATE upload_chunks SET embedding = ? WHERE id = ?").run(value, id);
+}
+
+/**
+ * Delete a single chunk by id, scoped to the given county.
+ * @param {string} id
+ * @param {string} county
+ * @returns {number} rows deleted
+ */
+function deleteChunksById(id, county) {
+  const result = db
+    .prepare("DELETE FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)")
+    .run(id, county);
+  return result.changes;
+}
+
+/**
+ * Delete all chunks matching source + county.
+ * @param {string} source
+ * @param {string} county
+ * @returns {number} rows deleted
+ */
+function deleteChunksBySource(source, county) {
+  const result = db
+    .prepare("DELETE FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)")
+    .run(source, county);
+  return result.changes;
+}
+
+/**
+ * Return the ids of all chunks matching id or source within a county,
+ * without deleting them. Used to collect Milvus ids before deletion.
+ */
+function findChunkIds({ id, source, county }) {
+  if (id) {
+    const row = db
+      .prepare("SELECT id FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)")
+      .get(id, county);
+    return row ? [row.id] : [];
+  }
+  if (source) {
+    const rows = db
+      .prepare("SELECT id FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)")
+      .all(source, county);
+    return rows.map((r) => r.id);
+  }
+  return [];
 }
 
 module.exports = {
-  readUploads,
-  writeUploads,
+  readChunks,
+  insertChunks,
+  updateChunkEmbedding,
+  deleteChunksById,
+  deleteChunksBySource,
+  findChunkIds,
 };
+

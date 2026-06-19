@@ -2,8 +2,9 @@ const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
-const { readUploads, writeUploads } = require("../lib/uploadStore");
+const { insertChunks } = require("../lib/uploadStore");
 const { attachEmbeddings } = require("../lib/embeddings");
+const { upsertChunks } = require("../lib/vectorStore");
 const { createId, chunkText, normalizeChunkText } = require("./uploadFilesControllers");
 const helperController = require("./helperController");
 const { normalizeCounty } = require("../lib/countyRegistry");
@@ -307,8 +308,7 @@ function buildTranscriptUploadRecords(record, normalizedTranscript, transcriptCh
 }
 
 async function upsertTranscriptUploads(records) {
-    const existing = await readUploads();
-    await writeUploads(existing.concat(records));
+    insertChunks(records);
 }
 
 async function uploadVideoFile(req, res) {
@@ -369,8 +369,13 @@ async function uploadVideoFile(req, res) {
 
     req.on("data", (chunk) => {
         bytesWritten += chunk.length;
-        if (bytesWritten > MAX_VIDEO_BYTES) {
-            req.destroy(new Error("Video upload exceeds maximum size"));
+        if (bytesWritten > MAX_VIDEO_BYTES && !finalized) {
+            req.unpipe(writeStream);
+            writeStream.destroy();
+            req.resume();
+            finalized = true;
+            fs.unlink(filePath).catch(() => {});
+            sendJson(res, 413, { error: `File exceeds the ${MAX_VIDEO_BYTES / (1024 * 1024)} MB limit` });
         }
     });
 
@@ -458,6 +463,22 @@ async function processVideoFile(recordId) {
             transcriptChunks,
         );
         await attachEmbeddings(uploadRecords, { concurrency: EMBEDDING_CONCURRENCY });
+
+        // Upsert embedded chunks into Milvus; non-fatal on failure.
+        try {
+            await upsertChunks(
+                uploadRecords.map((r) => ({
+                    chunkId: r.id,
+                    county: r.county,
+                    state: r.state,
+                    source: r.source,
+                    embedding: r.embedding,
+                })),
+            );
+        } catch (milvusError) {
+            console.error("[vectorStore] upsert failed (non-fatal):", milvusError?.message);
+        }
+
         await upsertTranscriptUploads(uploadRecords);
 
         await updateVideoRecord(record, {

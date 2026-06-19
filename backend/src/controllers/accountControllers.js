@@ -49,6 +49,16 @@ function checkRateLimit(req, bucket, limit, res) {
   return false;
 }
 
+function checkPasswordAndUsernameLength(username, password) {
+  if (username.length < 8 || username.length > 50) {
+    return "Username must be between 8 and 50 characters";
+  }
+  if (password.length < 8 || password.length > 64) {
+    return "Password must be between 8 and 64 characters";
+  }
+  return null;
+}
+
 function buildSessionCookie(token) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   return `session_token=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE_SECONDS}; SameSite=Strict${secure}`;
@@ -87,12 +97,13 @@ async function createAccount(req, res) {
     const selectedCounty = normalizeCounty(county);
     const selectedState = resolveState(state);
 
-    if (!username || !password || !selectedCounty || !state) {
+    const validationError = checkPasswordAndUsernameLength(username, password);
+    if (validationError) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "application/json");
       res.end(
         JSON.stringify({
-          error: "Username, password, county, and state are required",
+          error: validationError,
         }),
       );
       return;

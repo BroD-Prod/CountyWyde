@@ -1,9 +1,10 @@
 const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { readUploads, writeUploads } = require("../lib/uploadStore");
+const { readChunks, insertChunks, deleteChunksById, deleteChunksBySource, findChunkIds } = require("../lib/uploadStore");
 const { parseFile } = require("../lib/fileParser");
 const { attachEmbeddings } = require("../lib/embeddings");
+const { upsertChunks, deleteChunks } = require("../lib/vectorStore");
 const helperController = require("./helperController");
 const { normalizeCounty } = require("../lib/countyRegistry");
 
@@ -177,7 +178,6 @@ async function uploadFile(req, res) {
         const state = String(
             user.state_abbreviation || user.state_name || "",
         ).trim();
-        const existing = await readUploads();
 
         if (!county || !state) {
             res.statusCode = 400;
@@ -295,8 +295,23 @@ async function uploadFile(req, res) {
             return;
         }
 
-        const updated = existing.concat(normalized);
-        await writeUploads(updated);
+        // Upsert embedded chunks into Milvus; errors are non-fatal so uploads
+        // still succeed even if Milvus is temporarily unavailable.
+        try {
+            await upsertChunks(
+                normalized.map((r) => ({
+                    chunkId: r.id,
+                    county: r.county,
+                    state: r.state,
+                    source: r.source,
+                    embedding: r.embedding,
+                })),
+            );
+        } catch (milvusError) {
+            console.error("[vectorStore] upsert failed (non-fatal):", milvusError?.message);
+        }
+
+        insertChunks(normalized);
 
         res.statusCode = 201;
         res.end(
@@ -304,7 +319,6 @@ async function uploadFile(req, res) {
                 filesProcessed: incomingFiles.length,
                 documentsSaved,
                 added: normalized.length,
-                total: updated.length,
             }),
         );
     } catch (error) {
@@ -325,10 +339,7 @@ async function getUpload(req, res) {
     }
 
     const county = normalizeCounty(user.county);
-    const uploads = await readUploads();
-    const countyUploads = uploads.filter(
-        (item) => normalizeCounty(item.county) === county,
-    );
+    const countyUploads = readChunks({ county });
     res.statusCode = 200;
     res.end(
         JSON.stringify({ total: countyUploads.length, uploads: countyUploads }),
@@ -439,8 +450,10 @@ async function getOriginalDocument(req, res, documentId) {
             return;
         }
 
-        const uploads = await readUploads();
-        const record = findPdfRecordByDocumentId(uploads, requestedId);
+        const chunks = readChunks({ documentId: requestedId });
+        const record = chunks.find(
+            (item) => item.parsedType === "pdf" && typeof item.originalStoredPath === "string",
+        ) ?? null;
 
         if (!record) {
             res.statusCode = 404;
@@ -470,8 +483,10 @@ async function getOriginalDocumentBySource(req, res) {
             return;
         }
 
-        const uploads = await readUploads();
-        const record = findPdfRecordBySource(uploads, { source, county, state });
+        const chunks = readChunks({ source, county, state });
+        const record = chunks.find(
+            (item) => item.parsedType === "pdf" && typeof item.originalStoredPath === "string",
+        ) ?? null;
 
         if (!record) {
             res.statusCode = 404;
@@ -500,26 +515,27 @@ async function deleteUpload(req, res) {
 
         const county = normalizeCounty(user.county);
         const payload = await helperController.parseJsonBody(req, MAX_JSON_BYTES);
-        const uploads = await readUploads();
 
-        const isOwnedByCounty = (item) => normalizeCounty(item.county) === county;
-        let filtered = uploads;
+        let deleted = 0;
 
         if (payload.id) {
-            filtered = uploads.filter(
-                (item) => !(item.id === payload.id && isOwnedByCounty(item)),
-            );
+            const ids = findChunkIds({ id: payload.id, county });
+            if (ids.length > 0) {
+                try { await deleteChunks(ids); } catch { }
+            }
+            deleted = deleteChunksById(payload.id, county);
         } else if (payload.source) {
-            filtered = uploads.filter(
-                (item) => !(item.source === payload.source && isOwnedByCounty(item)),
-            );
+            const ids = findChunkIds({ source: payload.source, county });
+            if (ids.length > 0) {
+                try { await deleteChunks(ids); } catch { }
+            }
+            deleted = deleteChunksBySource(payload.source, county);
         } else {
             res.statusCode = 400;
             res.end(JSON.stringify({ error: "Provide id or source to delete" }));
             return;
         }
 
-        const deleted = uploads.length - filtered.length;
         if (deleted === 0) {
             res.statusCode = 404;
             res.end(
@@ -528,9 +544,8 @@ async function deleteUpload(req, res) {
             return;
         }
 
-        await writeUploads(filtered);
         res.statusCode = 200;
-        res.end(JSON.stringify({ deleted, total: filtered.length }));
+        res.end(JSON.stringify({ deleted }));
     } catch (error) {
         res.statusCode = error.message === "Payload too large" ? 413 : 400;
         res.end(JSON.stringify({ error: error.message || "Bad Request" }));

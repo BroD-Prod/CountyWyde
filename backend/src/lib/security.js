@@ -79,10 +79,7 @@ async function appendJsonLine(filePath, payload) {
 }
 
 function getClientIp(req) {
-  const forwarded = String(req.headers["x-forwarded-for"] || "")
-    .split(",")[0]
-    .trim();
-  return forwarded || req.socket?.remoteAddress || "unknown";
+  return req.socket?.remoteAddress || "unknown";
 }
 
 function getPath(req) {

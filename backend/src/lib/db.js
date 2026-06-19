@@ -286,11 +286,43 @@ function createIndexes() {
   );
 }
 
+function createUploadChunksTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS upload_chunks (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      text TEXT NOT NULL,
+      parsed_type TEXT NOT NULL DEFAULT 'text',
+      metadata TEXT,
+      structured TEXT,
+      county TEXT NOT NULL,
+      state TEXT NOT NULL,
+      chunk_index INTEGER NOT NULL DEFAULT 0,
+      chunk_count INTEGER NOT NULL DEFAULT 1,
+      row_index INTEGER,
+      document_id TEXT,
+      original_file_name TEXT,
+      original_mime_type TEXT,
+      original_size INTEGER,
+      original_stored_filename TEXT,
+      original_stored_path TEXT,
+      original_stored_at TEXT,
+      embedding TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  db.exec("CREATE INDEX IF NOT EXISTS idx_upload_chunks_county_state ON upload_chunks(county, state);");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_upload_chunks_document_id ON upload_chunks(document_id);");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_upload_chunks_source_county ON upload_chunks(source, county);");
+}
+
 function initializeDb() {
   createCoreTables();
   seedStates();
   migrateAccountsTable();
   createTranscriptionTables();
+  createUploadChunksTable();
   createIndexes();
 }
 
