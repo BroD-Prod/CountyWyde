@@ -312,9 +312,15 @@ function createUploadChunksTable() {
     );
   `);
 
-  db.exec("CREATE INDEX IF NOT EXISTS idx_upload_chunks_county_state ON upload_chunks(county, state);");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_upload_chunks_document_id ON upload_chunks(document_id);");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_upload_chunks_source_county ON upload_chunks(source, county);");
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_county_state ON upload_chunks(county, state);",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_document_id ON upload_chunks(document_id);",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_source_county ON upload_chunks(source, county);",
+  );
 }
 
 function initializeDb() {

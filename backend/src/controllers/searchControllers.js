@@ -102,7 +102,9 @@ function rankByOverlap(records, prompt, max = 5) {
 
   return records
     .map((record) => {
-      const recordTokens = tokenize(`${record.source || ""} ${record.text || ""}`);
+      const recordTokens = tokenize(
+        `${record.source || ""} ${record.text || ""}`,
+      );
       let score = 0;
 
       for (const token of recordTokens) {
@@ -159,7 +161,13 @@ function fuseWithRrf(lexicalMatches, vectorMatches, max = 5) {
     .slice(0, max);
 }
 
-async function rankVectorWithMilvus(records, queryEmbedding, county, state, max) {
+async function rankVectorWithMilvus(
+  records,
+  queryEmbedding,
+  county,
+  state,
+  max,
+) {
   try {
     const hits = await milvusSearch(queryEmbedding, { county, state }, max);
     const recordMap = new Map(records.map((r) => [String(r.id), r]));
@@ -267,7 +275,9 @@ function dedupeMatchesBySource(matches) {
   const deduped = [];
 
   for (const match of matches) {
-    const sourceKey = String(match?.source || "").trim().toLowerCase();
+    const sourceKey = String(match?.source || "")
+      .trim()
+      .toLowerCase();
     if (!sourceKey || seenSources.has(sourceKey)) {
       continue;
     }
@@ -280,7 +290,9 @@ function dedupeMatchesBySource(matches) {
 }
 
 function findPdfDocumentBySource(records, sourceName) {
-  const normalizedSource = String(sourceName || "").trim().toLowerCase();
+  const normalizedSource = String(sourceName || "")
+    .trim()
+    .toLowerCase();
   if (!normalizedSource) {
     return null;
   }
@@ -289,7 +301,9 @@ function findPdfDocumentBySource(records, sourceName) {
     records.find(
       (item) =>
         item?.parsedType === "pdf" &&
-        String(item?.source || "").trim().toLowerCase() === normalizedSource &&
+        String(item?.source || "")
+          .trim()
+          .toLowerCase() === normalizedSource &&
         String(item?.documentId || "").trim() &&
         typeof item?.originalStoredPath === "string",
     ) || null
@@ -344,7 +358,10 @@ async function postSearch(req, res) {
     }
 
     const countyUploads = readChunks({ county, state });
-    const rankedMatches = await rankHybrid(countyUploads, prompt, MAX_VECTOR, { county, state });
+    const rankedMatches = await rankHybrid(countyUploads, prompt, MAX_VECTOR, {
+      county,
+      state,
+    });
 
     if (
       rankedMatches.length === 0 ||
@@ -369,8 +386,7 @@ async function postSearch(req, res) {
 
     const model = genAi.getGenerativeModel({
       model: "gemini-2.5-flash",
-      systemInstruction:
-`You are an expert assistant tasked with rewriting and summarizing source text into clean, professional, and completely original phrasing.
+      systemInstruction: `You are an expert assistant tasked with rewriting and summarizing source text into clean, professional, and completely original phrasing.
 
     CRITICAL RULES:
     1. STRICT PARAPHRASING: You must completely rephrase the information using your own words, sentence structures, and vocabulary. Never copy blocks of text, distinct clauses, or unique sentence layouts directly from the source. 
@@ -404,7 +420,10 @@ async function postSearch(req, res) {
         source: item.source,
         documentId: fallback?.documentId || item.documentId || null,
         originalFileName:
-          fallback?.originalFileName || item.originalFileName || item.source || null,
+          fallback?.originalFileName ||
+          item.originalFileName ||
+          item.source ||
+          null,
       };
     });
 

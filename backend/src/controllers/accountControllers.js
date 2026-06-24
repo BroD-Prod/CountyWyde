@@ -22,6 +22,18 @@ const DELETE_RATE_LIMIT = 10;
 const UPDATE_RATE_LIMIT = 30;
 const rateWindow = new Map();
 
+function isAdminRequest(req) {
+  if (!ADMIN_KEY) return false;
+  const providedKey = req.headers["x-admin-key"] || "";
+
+  if (providedKey.length !== ADMIN_KEY.length) return false;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(providedKey),
+    Buffer.from(ADMIN_KEY),
+  );
+}
+
 function getClientIp(req) {
   return req.socket?.remoteAddress || "unknown";
 }

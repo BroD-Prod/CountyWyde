@@ -1,7 +1,13 @@
 const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { readChunks, insertChunks, deleteChunksById, deleteChunksBySource, findChunkIds } = require("../lib/uploadStore");
+const {
+  readChunks,
+  insertChunks,
+  deleteChunksById,
+  deleteChunksBySource,
+  findChunkIds,
+} = require("../lib/uploadStore");
 const { parseFile } = require("../lib/fileParser");
 const { attachEmbeddings } = require("../lib/embeddings");
 const { upsertChunks, deleteChunks } = require("../lib/vectorStore");
@@ -16,549 +22,575 @@ const EMBEDDING_CONCURRENCY = 4;
 const DOCUMENTS_DIR = path.join(__dirname, "../../data/documents");
 
 function createId() {
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 async function persistOriginalPdf({
-    buffer,
-    sourceName,
-    mimeType,
+  buffer,
+  sourceName,
+  mimeType,
+  county,
+  state,
+}) {
+  const documentId = createId();
+  const safeSourceName = String(sourceName || "upload.pdf").replace(
+    /[^a-zA-Z0-9._-]/g,
+    "_",
+  );
+  const filename = `${documentId}-${safeSourceName.endsWith(".pdf") ? safeSourceName : `${safeSourceName}.pdf`}`;
+
+  await fs.mkdir(DOCUMENTS_DIR, { recursive: true });
+
+  const absolutePath = path.join(DOCUMENTS_DIR, filename);
+  await fs.writeFile(absolutePath, buffer);
+
+  return {
+    documentId,
+    originalName: sourceName,
+    mimeType: mimeType || "application/pdf",
+    size: buffer.length,
     county,
     state,
-}) {
-    const documentId = createId();
-    const safeSourceName = String(sourceName || "upload.pdf").replace(
-        /[^a-zA-Z0-9._-]/g,
-        "_",
-    );
-    const filename = `${documentId}-${safeSourceName.endsWith(".pdf") ? safeSourceName : `${safeSourceName}.pdf`}`;
-
-    await fs.mkdir(DOCUMENTS_DIR, { recursive: true });
-
-    const absolutePath = path.join(DOCUMENTS_DIR, filename);
-    await fs.writeFile(absolutePath, buffer);
-
-    return {
-        documentId,
-        originalName: sourceName,
-        mimeType: mimeType || "application/pdf",
-        size: buffer.length,
-        county,
-        state,
-        storedFilename: filename,
-        storedPath: absolutePath,
-        createdAt: new Date().toISOString(),
-    };
+    storedFilename: filename,
+    storedPath: absolutePath,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 function normalizeChunkText(text) {
-    return String(text || "")
-        .replace(/\r\n/g, "\n")
-        .replace(/\u0000/g, "")
-        .trim();
+  return String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u0000/g, "")
+    .trim();
 }
 
 function findChunkEnd(text, start, maxEnd) {
-    const slice = text.slice(start, maxEnd);
-    const newlineBreak = slice.lastIndexOf("\n");
-    if (newlineBreak >= CHUNK_SIZE * 0.5) {
-        return start + newlineBreak + 1;
-    }
+  const slice = text.slice(start, maxEnd);
+  const newlineBreak = slice.lastIndexOf("\n");
+  if (newlineBreak >= CHUNK_SIZE * 0.5) {
+    return start + newlineBreak + 1;
+  }
 
-    const sentenceBreak = Math.max(
-        slice.lastIndexOf(". "),
-        slice.lastIndexOf("? "),
-        slice.lastIndexOf("! "),
-    );
-    if (sentenceBreak >= CHUNK_SIZE * 0.5) {
-        return start + sentenceBreak + 1;
-    }
+  const sentenceBreak = Math.max(
+    slice.lastIndexOf(". "),
+    slice.lastIndexOf("? "),
+    slice.lastIndexOf("! "),
+  );
+  if (sentenceBreak >= CHUNK_SIZE * 0.5) {
+    return start + sentenceBreak + 1;
+  }
 
-    const whitespaceBreak = slice.lastIndexOf(" ");
-    if (whitespaceBreak >= CHUNK_SIZE * 0.5) {
-        return start + whitespaceBreak + 1;
-    }
+  const whitespaceBreak = slice.lastIndexOf(" ");
+  if (whitespaceBreak >= CHUNK_SIZE * 0.5) {
+    return start + whitespaceBreak + 1;
+  }
 
-    return maxEnd;
+  return maxEnd;
 }
 
 function chunkText(rawText, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
-    const text = normalizeChunkText(rawText);
-    if (!text) {
-        return [];
+  const text = normalizeChunkText(rawText);
+  if (!text) {
+    return [];
+  }
+
+  if (text.length <= chunkSize) {
+    return [text];
+  }
+
+  const chunks = [];
+  let start = 0;
+
+  while (start < text.length) {
+    const maxEnd = Math.min(start + chunkSize, text.length);
+    const end = findChunkEnd(text, start, maxEnd);
+    const chunk = text.slice(start, end).trim();
+
+    if (chunk) {
+      chunks.push(chunk);
     }
 
-    if (text.length <= chunkSize) {
-        return [text];
+    if (end >= text.length) {
+      break;
     }
 
-    const chunks = [];
-    let start = 0;
+    const nextStart = Math.max(end - overlap, start + 1);
+    start = nextStart;
+  }
 
-    while (start < text.length) {
-        const maxEnd = Math.min(start + chunkSize, text.length);
-        const end = findChunkEnd(text, start, maxEnd);
-        const chunk = text.slice(start, end).trim();
-
-        if (chunk) {
-            chunks.push(chunk);
-        }
-
-        if (end >= text.length) {
-            break;
-        }
-
-        const nextStart = Math.max(end - overlap, start + 1);
-        start = nextStart;
-    }
-
-    return chunks;
+  return chunks;
 }
 
 function normalizeParsed(parsed, source, county, state) {
-    const sourceName = source || parsed?.metadata?.name || "unknown";
+  const sourceName = source || parsed?.metadata?.name || "unknown";
 
-    if (Array.isArray(parsed.structured)) {
-        return parsed.structured.map((item, index) => ({
-            id: createId(),
-            source: sourceName,
-            text: typeof item === "object" ? JSON.stringify(item) : String(item),
-            parsedType: parsed.parsedType,
-            metadata: parsed.metadata,
-            structured: item,
-            county,
-            state,
-            rowIndex: index,
-            chunkIndex: 0,
-            chunkCount: 1,
-            createdAt: new Date().toISOString(),
-        }));
-    }
-
-    const baseText =
-        parsed.rawText ||
-        (parsed.structured ? JSON.stringify(parsed.structured, null, 2) : "");
-    const chunks = chunkText(baseText);
-
-    if (chunks.length === 0) {
-        return [];
-    }
-
-    const chunkCount = chunks.length;
-
-    return chunks.map((chunk, index) => ({
-        id: createId(),
-        source: sourceName,
-        text: chunk,
-        parsedType: parsed.parsedType,
-        metadata: parsed.metadata,
-        structured: parsed.structured,
-        county,
-        state,
-        chunkIndex: index,
-        chunkCount,
-        createdAt: new Date().toISOString(),
+  if (Array.isArray(parsed.structured)) {
+    return parsed.structured.map((item, index) => ({
+      id: createId(),
+      source: sourceName,
+      text: typeof item === "object" ? JSON.stringify(item) : String(item),
+      parsedType: parsed.parsedType,
+      metadata: parsed.metadata,
+      structured: item,
+      county,
+      state,
+      rowIndex: index,
+      chunkIndex: 0,
+      chunkCount: 1,
+      createdAt: new Date().toISOString(),
     }));
+  }
+
+  const baseText =
+    parsed.rawText ||
+    (parsed.structured ? JSON.stringify(parsed.structured, null, 2) : "");
+  const chunks = chunkText(baseText);
+
+  if (chunks.length === 0) {
+    return [];
+  }
+
+  const chunkCount = chunks.length;
+
+  return chunks.map((chunk, index) => ({
+    id: createId(),
+    source: sourceName,
+    text: chunk,
+    parsedType: parsed.parsedType,
+    metadata: parsed.metadata,
+    structured: parsed.structured,
+    county,
+    state,
+    chunkIndex: index,
+    chunkCount,
+    createdAt: new Date().toISOString(),
+  }));
 }
 
 async function uploadFile(req, res) {
-    try {
-        const user = helperController.getAuthenticatedUser(req, {
-            includeState: true,
-            cleanupExpired: true,
-        });
-        if (!user) {
-            res.statusCode = 401;
-            res.end(JSON.stringify({ error: "You must be signed in to upload" }));
-            return;
-        }
-
-        const payload = await helperController.parseJsonBody(req, MAX_JSON_BYTES);
-        const county = normalizeCounty(user.county);
-        const state = String(
-            user.state_abbreviation || user.state_name || "",
-        ).trim();
-
-        if (!county || !state) {
-            res.statusCode = 400;
-            res.end(
-                JSON.stringify({ error: "No county/state found on your account" }),
-            );
-            return;
-        }
-
-        const incomingFiles = Array.isArray(payload.files)
-            ? payload.files
-            : payload.file
-                ? [payload.file]
-                : [];
-
-        if (incomingFiles.length === 0) {
-            res.statusCode = 422;
-            res.end(
-                JSON.stringify({
-                    error:
-                        "Invalid upload payload. Send: { files: [{ name, type, size, base64 }] }",
-                }),
-            );
-            return;
-        }
-
-        let normalized = [];
-        let documentsSaved = 0;
-
-        for (const inputFile of incomingFiles) {
-            const base64Input = String(inputFile?.base64 || "");
-            const base64 = base64Input.includes(",")
-                ? base64Input.split(",")[1]
-                : base64Input;
-            const buffer = Buffer.from(base64, "base64");
-
-            if (!buffer.length) {
-                res.statusCode = 400;
-                res.end(
-                    JSON.stringify({
-                        error: `Invalid base64 file payload for ${inputFile?.name || "unknown file"}`,
-                    }),
-                );
-                return;
-            }
-
-            if (buffer.length > maxUploadSize) {
-                res.statusCode = 413;
-                res.end(
-                    JSON.stringify({
-                        error: `File size exceeds limit for ${inputFile?.name || "unknown file"}`,
-                    }),
-                );
-                return;
-            }
-
-            const parsed = await parseFile({
-                originalname: inputFile.name || payload.source || "upload.bin",
-                mimetype:
-                    inputFile.type || inputFile.mimeType || "application/octet-stream",
-                buffer,
-                size: inputFile.size || null,
-            });
-
-            let documentMetadata = null;
-            if (parsed.parsedType === "pdf") {
-                documentMetadata = await persistOriginalPdf({
-                    buffer,
-                    sourceName: inputFile.name || payload.source || "unknown.pdf",
-                    mimeType: inputFile.type || inputFile.mimeType || "application/pdf",
-                    county,
-                    state,
-                });
-                documentsSaved += 1;
-            }
-
-            if (!parsed.rawText && !parsed.structured) {
-                res.statusCode = 400;
-                res.end(
-                    JSON.stringify({
-                        error: `Parsed file has no content: ${inputFile?.name || "unknown file"}`,
-                    }),
-                );
-                return;
-            }
-
-            const parsedRecords = normalizeParsed(
-                parsed,
-                payload.source || inputFile.name,
-                county,
-                state,
-            );
-
-            const recordsWithDocument = documentMetadata
-                ? parsedRecords.map((record) => ({
-                    ...record,
-                    documentId: documentMetadata.documentId,
-                    originalFileName: documentMetadata.originalName,
-                    originalMimeType: documentMetadata.mimeType,
-                    originalSize: documentMetadata.size,
-                    originalStoredFilename: documentMetadata.storedFilename,
-                    originalStoredPath: documentMetadata.storedPath,
-                    originalStoredAt: documentMetadata.createdAt,
-                }))
-                : parsedRecords;
-
-            normalized = normalized.concat(recordsWithDocument);
-        }
-
-        await attachEmbeddings(normalized, { concurrency: EMBEDDING_CONCURRENCY });
-
-        if (normalized.length === 0) {
-            res.statusCode = 400;
-            res.end(JSON.stringify({ error: "No valid upload content found" }));
-            return;
-        }
-
-        // Upsert embedded chunks into Milvus; errors are non-fatal so uploads
-        // still succeed even if Milvus is temporarily unavailable.
-        try {
-            await upsertChunks(
-                normalized.map((r) => ({
-                    chunkId: r.id,
-                    county: r.county,
-                    state: r.state,
-                    source: r.source,
-                    embedding: r.embedding,
-                })),
-            );
-        } catch (milvusError) {
-            console.error("[vectorStore] upsert failed (non-fatal):", milvusError?.message);
-        }
-
-        insertChunks(normalized);
-
-        res.statusCode = 201;
-        res.end(
-            JSON.stringify({
-                filesProcessed: incomingFiles.length,
-                documentsSaved,
-                added: normalized.length,
-            }),
-        );
-    } catch (error) {
-        res.statusCode = error.message === "Payload too large" ? 413 : 400;
-        res.end(JSON.stringify({ error: error.message || "Bad Request" }));
+  try {
+    const user = helperController.getAuthenticatedUser(req, {
+      includeState: true,
+      cleanupExpired: true,
+    });
+    if (!user) {
+      res.statusCode = 401;
+      res.end(JSON.stringify({ error: "You must be signed in to upload" }));
+      return;
     }
+
+    const payload = await helperController.parseJsonBody(req, MAX_JSON_BYTES);
+    const county = normalizeCounty(user.county);
+    const state = String(
+      user.state_abbreviation || user.state_name || "",
+    ).trim();
+
+    if (!county || !state) {
+      res.statusCode = 400;
+      res.end(
+        JSON.stringify({ error: "No county/state found on your account" }),
+      );
+      return;
+    }
+
+    const incomingFiles = Array.isArray(payload.files)
+      ? payload.files
+      : payload.file
+        ? [payload.file]
+        : [];
+
+    if (incomingFiles.length === 0) {
+      res.statusCode = 422;
+      res.end(
+        JSON.stringify({
+          error:
+            "Invalid upload payload. Send: { files: [{ name, type, size, base64 }] }",
+        }),
+      );
+      return;
+    }
+
+    let normalized = [];
+    let documentsSaved = 0;
+
+    for (const inputFile of incomingFiles) {
+      const base64Input = String(inputFile?.base64 || "");
+      const base64 = base64Input.includes(",")
+        ? base64Input.split(",")[1]
+        : base64Input;
+      const buffer = Buffer.from(base64, "base64");
+
+      if (!buffer.length) {
+        res.statusCode = 400;
+        res.end(
+          JSON.stringify({
+            error: `Invalid base64 file payload for ${inputFile?.name || "unknown file"}`,
+          }),
+        );
+        return;
+      }
+
+      if (buffer.length > maxUploadSize) {
+        res.statusCode = 413;
+        res.end(
+          JSON.stringify({
+            error: `File size exceeds limit for ${inputFile?.name || "unknown file"}`,
+          }),
+        );
+        return;
+      }
+
+      const parsed = await parseFile({
+        originalname: inputFile.name || payload.source || "upload.bin",
+        mimetype:
+          inputFile.type || inputFile.mimeType || "application/octet-stream",
+        buffer,
+        size: inputFile.size || null,
+      });
+
+      let documentMetadata = null;
+      if (parsed.parsedType === "pdf") {
+        documentMetadata = await persistOriginalPdf({
+          buffer,
+          sourceName: inputFile.name || payload.source || "unknown.pdf",
+          mimeType: inputFile.type || inputFile.mimeType || "application/pdf",
+          county,
+          state,
+        });
+        documentsSaved += 1;
+      }
+
+      if (!parsed.rawText && !parsed.structured) {
+        res.statusCode = 400;
+        res.end(
+          JSON.stringify({
+            error: `Parsed file has no content: ${inputFile?.name || "unknown file"}`,
+          }),
+        );
+        return;
+      }
+
+      const parsedRecords = normalizeParsed(
+        parsed,
+        payload.source || inputFile.name,
+        county,
+        state,
+      );
+
+      const recordsWithDocument = documentMetadata
+        ? parsedRecords.map((record) => ({
+            ...record,
+            documentId: documentMetadata.documentId,
+            originalFileName: documentMetadata.originalName,
+            originalMimeType: documentMetadata.mimeType,
+            originalSize: documentMetadata.size,
+            originalStoredFilename: documentMetadata.storedFilename,
+            originalStoredPath: documentMetadata.storedPath,
+            originalStoredAt: documentMetadata.createdAt,
+          }))
+        : parsedRecords;
+
+      normalized = normalized.concat(recordsWithDocument);
+    }
+
+    await attachEmbeddings(normalized, { concurrency: EMBEDDING_CONCURRENCY });
+
+    if (normalized.length === 0) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: "No valid upload content found" }));
+      return;
+    }
+
+    // Upsert embedded chunks into Milvus; errors are non-fatal so uploads
+    // still succeed even if Milvus is temporarily unavailable.
+    try {
+      await upsertChunks(
+        normalized.map((r) => ({
+          chunkId: r.id,
+          county: r.county,
+          state: r.state,
+          source: r.source,
+          embedding: r.embedding,
+        })),
+      );
+    } catch (milvusError) {
+      console.error(
+        "[vectorStore] upsert failed (non-fatal):",
+        milvusError?.message,
+      );
+    }
+
+    insertChunks(normalized);
+
+    res.statusCode = 201;
+    res.end(
+      JSON.stringify({
+        filesProcessed: incomingFiles.length,
+        documentsSaved,
+        added: normalized.length,
+      }),
+    );
+  } catch (error) {
+    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    res.end(JSON.stringify({ error: error.message || "Bad Request" }));
+  }
 }
 
 async function getUpload(req, res) {
-    const user = helperController.getAuthenticatedUser(req, {
-        includeState: false,
-        cleanupExpired: true,
-    });
-    if (!user) {
-        res.statusCode = 401;
-        res.end(JSON.stringify({ error: "You must be signed in" }));
-        return;
-    }
+  const user = helperController.getAuthenticatedUser(req, {
+    includeState: false,
+    cleanupExpired: true,
+  });
+  if (!user) {
+    res.statusCode = 401;
+    res.end(JSON.stringify({ error: "You must be signed in" }));
+    return;
+  }
 
-    const county = normalizeCounty(user.county);
-    const countyUploads = readChunks({ county });
-    res.statusCode = 200;
-    res.end(
-        JSON.stringify({ total: countyUploads.length, uploads: countyUploads }),
-    );
+  const county = normalizeCounty(user.county);
+  const countyUploads = readChunks({ county });
+  res.statusCode = 200;
+  res.end(
+    JSON.stringify({ total: countyUploads.length, uploads: countyUploads }),
+  );
 }
 
 function isPathInsideDocumentsRoot(storedPath) {
-    const absoluteStoredPath = path.resolve(String(storedPath || ""));
-    const allowedDocumentsRoot = path.resolve(DOCUMENTS_DIR);
+  const absoluteStoredPath = path.resolve(String(storedPath || ""));
+  const allowedDocumentsRoot = path.resolve(DOCUMENTS_DIR);
 
-    return (
-        absoluteStoredPath === allowedDocumentsRoot ||
-        absoluteStoredPath.startsWith(`${allowedDocumentsRoot}${path.sep}`)
-    )
-        ? absoluteStoredPath
-        : null;
+  return absoluteStoredPath === allowedDocumentsRoot ||
+    absoluteStoredPath.startsWith(`${allowedDocumentsRoot}${path.sep}`)
+    ? absoluteStoredPath
+    : null;
 }
 
 function findPdfRecordByDocumentId(uploads, requestedId) {
-    return (
-        uploads.find(
-            (item) =>
-                item?.parsedType === "pdf" &&
-                String(item?.documentId || "") === requestedId &&
-                typeof item?.originalStoredPath === "string",
-        ) || null
-    );
+  return (
+    uploads.find(
+      (item) =>
+        item?.parsedType === "pdf" &&
+        String(item?.documentId || "") === requestedId &&
+        typeof item?.originalStoredPath === "string",
+    ) || null
+  );
 }
 
 function findPdfRecordBySource(uploads, { source, county, state }) {
-    const sourceLower = String(source || "").trim().toLowerCase();
-    const normalizedCounty = normalizeCounty(county || "");
-    const normalizedState = String(state || "").trim().toLowerCase();
+  const sourceLower = String(source || "")
+    .trim()
+    .toLowerCase();
+  const normalizedCounty = normalizeCounty(county || "");
+  const normalizedState = String(state || "")
+    .trim()
+    .toLowerCase();
 
-    return (
-        uploads.find((item) => {
-            if (item?.parsedType !== "pdf") {
-                return false;
-            }
+  return (
+    uploads.find((item) => {
+      if (item?.parsedType !== "pdf") {
+        return false;
+      }
 
-            if (String(item?.source || "").trim().toLowerCase() !== sourceLower) {
-                return false;
-            }
+      if (
+        String(item?.source || "")
+          .trim()
+          .toLowerCase() !== sourceLower
+      ) {
+        return false;
+      }
 
-            if (normalizedCounty && normalizeCounty(item?.county) !== normalizedCounty) {
-                return false;
-            }
+      if (
+        normalizedCounty &&
+        normalizeCounty(item?.county) !== normalizedCounty
+      ) {
+        return false;
+      }
 
-            if (normalizedState) {
-                const itemState = String(item?.state || "").trim().toLowerCase();
-                if (itemState !== normalizedState) {
-                    return false;
-                }
-            }
+      if (normalizedState) {
+        const itemState = String(item?.state || "")
+          .trim()
+          .toLowerCase();
+        if (itemState !== normalizedState) {
+          return false;
+        }
+      }
 
-            return typeof item?.originalStoredPath === "string";
-        }) || null
-    );
+      return typeof item?.originalStoredPath === "string";
+    }) || null
+  );
 }
 
 async function streamPdfRecord(res, record, fallbackName = "document.pdf") {
-    const absoluteStoredPath = isPathInsideDocumentsRoot(record?.originalStoredPath);
+  const absoluteStoredPath = isPathInsideDocumentsRoot(
+    record?.originalStoredPath,
+  );
 
-    if (!absoluteStoredPath) {
-        res.statusCode = 400;
-        res.end(JSON.stringify({ error: "Invalid document path" }));
-        return;
+  if (!absoluteStoredPath) {
+    res.statusCode = 400;
+    res.end(JSON.stringify({ error: "Invalid document path" }));
+    return;
+  }
+
+  try {
+    await fs.access(absoluteStoredPath);
+  } catch {
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: "Document file is missing" }));
+    return;
+  }
+
+  const downloadName = String(record.originalFileName || fallbackName).replace(
+    /[\r\n"]/g,
+    "_",
+  );
+
+  res.statusCode = 200;
+  res.removeHeader("X-Frame-Options");
+  res.setHeader(
+    "Content-Security-Policy",
+    "frame-ancestors 'self' http://localhost:3000",
+  );
+  res.setHeader("Content-Type", record.originalMimeType || "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${downloadName}"`);
+
+  const stream = fsSync.createReadStream(absoluteStoredPath);
+  stream.on("error", () => {
+    if (!res.writableEnded) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: "Unable to read document file" }));
     }
-
-    try {
-        await fs.access(absoluteStoredPath);
-    } catch {
-        res.statusCode = 404;
-        res.end(JSON.stringify({ error: "Document file is missing" }));
-        return;
-    }
-
-    const downloadName = String(record.originalFileName || fallbackName).replace(
-        /[\r\n"]/g,
-        "_",
-    );
-
-    res.statusCode = 200;
-    res.removeHeader("X-Frame-Options");
-    res.setHeader(
-        "Content-Security-Policy",
-        "frame-ancestors 'self' http://localhost:3000",
-    );
-    res.setHeader("Content-Type", record.originalMimeType || "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="${downloadName}"`);
-
-    const stream = fsSync.createReadStream(absoluteStoredPath);
-    stream.on("error", () => {
-        if (!res.writableEnded) {
-            res.statusCode = 500;
-            res.end(JSON.stringify({ error: "Unable to read document file" }));
-        }
-    });
-    stream.pipe(res);
+  });
+  stream.pipe(res);
 }
 
 async function getOriginalDocument(req, res, documentId) {
-    try {
-        const requestedId = String(documentId || "").trim();
-        if (!requestedId) {
-            res.statusCode = 400;
-            res.end(JSON.stringify({ error: "Document id is required" }));
-            return;
-        }
-
-        const chunks = readChunks({ documentId: requestedId });
-        const record = chunks.find(
-            (item) => item.parsedType === "pdf" && typeof item.originalStoredPath === "string",
-        ) ?? null;
-
-        if (!record) {
-            res.statusCode = 404;
-            res.end(JSON.stringify({ error: "Document not found" }));
-            return;
-        }
-
-        await streamPdfRecord(res, record, `${requestedId}.pdf`);
-    } catch (error) {
-        res.statusCode = 400;
-        res.end(JSON.stringify({ error: error.message || "Bad Request" }));
+  try {
+    const requestedId = String(documentId || "").trim();
+    if (!requestedId) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: "Document id is required" }));
+      return;
     }
+
+    const chunks = readChunks({ documentId: requestedId });
+    const record =
+      chunks.find(
+        (item) =>
+          item.parsedType === "pdf" &&
+          typeof item.originalStoredPath === "string",
+      ) ?? null;
+
+    if (!record) {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: "Document not found" }));
+      return;
+    }
+
+    await streamPdfRecord(res, record, `${requestedId}.pdf`);
+  } catch (error) {
+    res.statusCode = 400;
+    res.end(JSON.stringify({ error: error.message || "Bad Request" }));
+  }
 }
 
 async function getOriginalDocumentBySource(req, res) {
-    try {
-        const requestUrl = new URL(req.url, "http://localhost:1337");
-        const source = String(requestUrl.searchParams.get("source") || "").trim();
-        const county = normalizeCounty(requestUrl.searchParams.get("county") || "");
-        const state = String(requestUrl.searchParams.get("state") || "")
-            .trim()
-            .toLowerCase();
+  try {
+    const requestUrl = new URL(req.url, "http://localhost:1337");
+    const source = String(requestUrl.searchParams.get("source") || "").trim();
+    const county = normalizeCounty(requestUrl.searchParams.get("county") || "");
+    const state = String(requestUrl.searchParams.get("state") || "")
+      .trim()
+      .toLowerCase();
 
-        if (!source) {
-            res.statusCode = 400;
-            res.end(JSON.stringify({ error: "source query param is required" }));
-            return;
-        }
-
-        const chunks = readChunks({ source, county, state });
-        const record = chunks.find(
-            (item) => item.parsedType === "pdf" && typeof item.originalStoredPath === "string",
-        ) ?? null;
-
-        if (!record) {
-            res.statusCode = 404;
-            res.end(JSON.stringify({ error: "Document not found" }));
-            return;
-        }
-
-        await streamPdfRecord(res, record, record.source || "document.pdf");
-    } catch (error) {
-        res.statusCode = 400;
-        res.end(JSON.stringify({ error: error.message || "Bad Request" }));
+    if (!source) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: "source query param is required" }));
+      return;
     }
+
+    const chunks = readChunks({ source, county, state });
+    const record =
+      chunks.find(
+        (item) =>
+          item.parsedType === "pdf" &&
+          typeof item.originalStoredPath === "string",
+      ) ?? null;
+
+    if (!record) {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: "Document not found" }));
+      return;
+    }
+
+    await streamPdfRecord(res, record, record.source || "document.pdf");
+  } catch (error) {
+    res.statusCode = 400;
+    res.end(JSON.stringify({ error: error.message || "Bad Request" }));
+  }
 }
 
 async function deleteUpload(req, res) {
-    try {
-        const user = helperController.getAuthenticatedUser(req, {
-            includeState: false,
-            cleanupExpired: true,
-        });
-        if (!user) {
-            res.statusCode = 401;
-            res.end(JSON.stringify({ error: "You must be signed in" }));
-            return;
-        }
-
-        const county = normalizeCounty(user.county);
-        const payload = await helperController.parseJsonBody(req, MAX_JSON_BYTES);
-
-        let deleted = 0;
-
-        if (payload.id) {
-            const ids = findChunkIds({ id: payload.id, county });
-            if (ids.length > 0) {
-                try { await deleteChunks(ids); } catch { }
-            }
-            deleted = deleteChunksById(payload.id, county);
-        } else if (payload.source) {
-            const ids = findChunkIds({ source: payload.source, county });
-            if (ids.length > 0) {
-                try { await deleteChunks(ids); } catch { }
-            }
-            deleted = deleteChunksBySource(payload.source, county);
-        } else {
-            res.statusCode = 400;
-            res.end(JSON.stringify({ error: "Provide id or source to delete" }));
-            return;
-        }
-
-        if (deleted === 0) {
-            res.statusCode = 404;
-            res.end(
-                JSON.stringify({ error: "No matching upload found for your county" }),
-            );
-            return;
-        }
-
-        res.statusCode = 200;
-        res.end(JSON.stringify({ deleted }));
-    } catch (error) {
-        res.statusCode = error.message === "Payload too large" ? 413 : 400;
-        res.end(JSON.stringify({ error: error.message || "Bad Request" }));
+  try {
+    const user = helperController.getAuthenticatedUser(req, {
+      includeState: false,
+      cleanupExpired: true,
+    });
+    if (!user) {
+      res.statusCode = 401;
+      res.end(JSON.stringify({ error: "You must be signed in" }));
+      return;
     }
+
+    const county = normalizeCounty(user.county);
+    const payload = await helperController.parseJsonBody(req, MAX_JSON_BYTES);
+
+    let deleted = 0;
+
+    if (payload.id) {
+      const ids = findChunkIds({ id: payload.id, county });
+      if (ids.length > 0) {
+        try {
+          await deleteChunks(ids);
+        } catch {}
+      }
+      deleted = deleteChunksById(payload.id, county);
+    } else if (payload.source) {
+      const ids = findChunkIds({ source: payload.source, county });
+      if (ids.length > 0) {
+        try {
+          await deleteChunks(ids);
+        } catch {}
+      }
+      deleted = deleteChunksBySource(payload.source, county);
+    } else {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: "Provide id or source to delete" }));
+      return;
+    }
+
+    if (deleted === 0) {
+      res.statusCode = 404;
+      res.end(
+        JSON.stringify({ error: "No matching upload found for your county" }),
+      );
+      return;
+    }
+
+    res.statusCode = 200;
+    res.end(JSON.stringify({ deleted }));
+  } catch (error) {
+    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    res.end(JSON.stringify({ error: error.message || "Bad Request" }));
+  }
 }
 
 module.exports = {
-    createId,
-    chunkText,
-    normalizeChunkText,
-    uploadFile,
-    getUpload,
-    getOriginalDocument,
-    getOriginalDocumentBySource,
-    deleteUpload,
+  createId,
+  chunkText,
+  normalizeChunkText,
+  uploadFile,
+  getUpload,
+  getOriginalDocument,
+  getOriginalDocumentBySource,
+  deleteUpload,
 };

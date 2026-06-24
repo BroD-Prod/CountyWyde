@@ -5,7 +5,11 @@
  * All callers should use this module rather than touching milvusClient directly.
  */
 
-const { getClient, ensureCollection, COLLECTION_NAME } = require("./milvusClient");
+const {
+  getClient,
+  ensureCollection,
+  COLLECTION_NAME,
+} = require("./milvusClient");
 
 const DEFAULT_TOP_K = 10;
 const DEFAULT_EF = 64;
@@ -23,26 +27,26 @@ const DEFAULT_EF = 64;
  * @returns {Promise<void>}
  */
 async function upsertChunk({ chunkId, county, state, source, embedding }) {
-    if (!Array.isArray(embedding) || embedding.length === 0) {
-        return;
-    }
+  if (!Array.isArray(embedding) || embedding.length === 0) {
+    return;
+  }
 
-    await ensureCollection();
-    const milvus = getClient();
+  await ensureCollection();
+  const milvus = getClient();
 
-    // Milvus upsert will insert-or-replace based on primary key (chunk_id)
-    await milvus.upsert({
-        collection_name: COLLECTION_NAME,
-        data: [
-            {
-                chunk_id: String(chunkId),
-                county: String(county || "").toLowerCase(),
-                state: String(state || "").toUpperCase(),
-                source: String(source || "").slice(0, 512),
-                embedding,
-            },
-        ],
-    });
+  // Milvus upsert will insert-or-replace based on primary key (chunk_id)
+  await milvus.upsert({
+    collection_name: COLLECTION_NAME,
+    data: [
+      {
+        chunk_id: String(chunkId),
+        county: String(county || "").toLowerCase(),
+        state: String(state || "").toUpperCase(),
+        source: String(source || "").slice(0, 512),
+        embedding,
+      },
+    ],
+  });
 }
 
 /**
@@ -53,32 +57,32 @@ async function upsertChunk({ chunkId, county, state, source, embedding }) {
  * @returns {Promise<{ inserted: number, skipped: number }>}
  */
 async function upsertChunks(chunks, batchSize = 200) {
-    const valid = chunks.filter(
-        (c) => Array.isArray(c.embedding) && c.embedding.length > 0,
-    );
-    if (valid.length === 0) {
-        return { inserted: 0, skipped: chunks.length };
-    }
+  const valid = chunks.filter(
+    (c) => Array.isArray(c.embedding) && c.embedding.length > 0,
+  );
+  if (valid.length === 0) {
+    return { inserted: 0, skipped: chunks.length };
+  }
 
-    await ensureCollection();
-    const milvus = getClient();
+  await ensureCollection();
+  const milvus = getClient();
 
-    let inserted = 0;
+  let inserted = 0;
 
-    for (let i = 0; i < valid.length; i += batchSize) {
-        const batch = valid.slice(i, i + batchSize).map((c) => ({
-            chunk_id: String(c.chunkId),
-            county: String(c.county || "").toLowerCase(),
-            state: String(c.state || "").toUpperCase(),
-            source: String(c.source || "").slice(0, 512),
-            embedding: c.embedding,
-        }));
+  for (let i = 0; i < valid.length; i += batchSize) {
+    const batch = valid.slice(i, i + batchSize).map((c) => ({
+      chunk_id: String(c.chunkId),
+      county: String(c.county || "").toLowerCase(),
+      state: String(c.state || "").toUpperCase(),
+      source: String(c.source || "").slice(0, 512),
+      embedding: c.embedding,
+    }));
 
-        await milvus.upsert({ collection_name: COLLECTION_NAME, data: batch });
-        inserted += batch.length;
-    }
+    await milvus.upsert({ collection_name: COLLECTION_NAME, data: batch });
+    inserted += batch.length;
+  }
 
-    return { inserted, skipped: chunks.length - valid.length };
+  return { inserted, skipped: chunks.length - valid.length };
 }
 
 /**
@@ -89,71 +93,82 @@ async function upsertChunks(chunks, batchSize = 200) {
  * @param {number} [topK]
  * @returns {Promise<Array<{ chunkId: string, score: number, source: string }>>}
  */
-async function searchByVector(queryEmbedding, { county, state }, topK = DEFAULT_TOP_K) {
-    if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
-        return [];
-    }
+async function searchByVector(
+  queryEmbedding,
+  { county, state },
+  topK = DEFAULT_TOP_K,
+) {
+  if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
+    return [];
+  }
 
-    await ensureCollection();
-    const milvus = getClient();
+  await ensureCollection();
+  const milvus = getClient();
 
-    const normalizedCounty = String(county || "").toLowerCase();
-    const normalizedState = String(state || "").toUpperCase();
+  const normalizedCounty = String(county || "").toLowerCase();
+  const normalizedState = String(state || "").toUpperCase();
 
-    // Build the boolean expression filter
-    const filterParts = [];
-    if (normalizedCounty) {
-        filterParts.push(`county == "${normalizedCounty.replace(/"/g, '\\"')}"`);
-    }
-    if (normalizedState) {
-        filterParts.push(`state == "${normalizedState.replace(/"/g, '\\"')}"`);
-    }
+  // Build the boolean expression filter
+  const filterParts = [];
+  if (normalizedCounty) {
+    filterParts.push(`county == "${normalizedCounty.replace(/"/g, '\\"')}"`);
+  }
+  if (normalizedState) {
+    filterParts.push(`state == "${normalizedState.replace(/"/g, '\\"')}"`);
+  }
 
-    const expr = filterParts.length > 0 ? filterParts.join(" && ") : "";
+  const expr = filterParts.length > 0 ? filterParts.join(" && ") : "";
 
-    const response = await milvus.search({
-        collection_name: COLLECTION_NAME,
-        data: [queryEmbedding],
-        anns_field: "embedding",
-        limit: topK,
-        filter: expr || undefined,
-        output_fields: ["chunk_id", "source"],
-        params: { ef: DEFAULT_EF },
-    });
+  const response = await milvus.search({
+    collection_name: COLLECTION_NAME,
+    data: [queryEmbedding],
+    anns_field: "embedding",
+    limit: topK,
+    filter: expr || undefined,
+    output_fields: ["chunk_id", "source"],
+    params: { ef: DEFAULT_EF },
+  });
 
-    const hits = response?.results ?? [];
+  const hits = response?.results ?? [];
 
-    return hits.map((hit) => ({
-        chunkId: hit.chunk_id,
-        score: hit.score,
-        source: hit.source,
-    }));
+  return hits.map((hit) => ({
+    chunkId: hit.chunk_id,
+    score: hit.score,
+    source: hit.source,
+  }));
 }
 
 /**
  * Delete vectors for a list of chunk IDs.
  *
  * @param {string[]} chunkIds
+ * @param {string} county
  * @returns {Promise<void>}
  */
 async function deleteChunks(chunkIds) {
-    if (!Array.isArray(chunkIds) || chunkIds.length === 0) {
-        return;
-    }
+  if (!Array.isArray(chunkIds) || chunkIds.length === 0) {
+    return;
+  }
 
-    await ensureCollection();
-    const milvus = getClient();
+  await ensureCollection();
+  const milvus = getClient();
 
-    const ids = chunkIds.map((id) => `"${String(id).replace(/"/g, '\\"')}"`);
-    await milvus.delete({
-        collection_name: COLLECTION_NAME,
-        filter: `chunk_id in [${ids.join(", ")}]`,
-    });
+  const ids = chunkIds.map((id) => `"${String(id).replace(/"/g, '\\"')}"`);
+  const normalizedCounty = String(county || "").toLowerCase();
+  await milvus.delete({
+    collection_name: COLLECTION_NAME,
+    filter: `chunk_id in [${ids.join(", ")}]`,
+  });
+
+  await milvus.delete({
+    collection_name: COLLECTION_NAME,
+    filter: `chunk_id in [${ids.join(", ")}] && county ==="${normalizedCounty}" `,
+  });
 }
 
 module.exports = {
-    upsertChunk,
-    upsertChunks,
-    searchByVector,
-    deleteChunks,
+  upsertChunk,
+  upsertChunks,
+  searchByVector,
+  deleteChunks,
 };

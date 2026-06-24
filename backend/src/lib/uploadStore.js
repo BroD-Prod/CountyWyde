@@ -18,12 +18,22 @@ function rowToChunk(row) {
     chunkCount: row.chunk_count,
     ...(row.row_index != null && { rowIndex: row.row_index }),
     ...(row.document_id != null && { documentId: row.document_id }),
-    ...(row.original_file_name != null && { originalFileName: row.original_file_name }),
-    ...(row.original_mime_type != null && { originalMimeType: row.original_mime_type }),
+    ...(row.original_file_name != null && {
+      originalFileName: row.original_file_name,
+    }),
+    ...(row.original_mime_type != null && {
+      originalMimeType: row.original_mime_type,
+    }),
     ...(row.original_size != null && { originalSize: row.original_size }),
-    ...(row.original_stored_filename != null && { originalStoredFilename: row.original_stored_filename }),
-    ...(row.original_stored_path != null && { originalStoredPath: row.original_stored_path }),
-    ...(row.original_stored_at != null && { originalStoredAt: row.original_stored_at }),
+    ...(row.original_stored_filename != null && {
+      originalStoredFilename: row.original_stored_filename,
+    }),
+    ...(row.original_stored_path != null && {
+      originalStoredPath: row.original_stored_path,
+    }),
+    ...(row.original_stored_at != null && {
+      originalStoredAt: row.original_stored_at,
+    }),
     embedding: row.embedding ? JSON.parse(row.embedding) : null,
     createdAt: row.created_at,
   };
@@ -36,7 +46,8 @@ function chunkToRow(chunk) {
     text: String(chunk.text || ""),
     parsed_type: String(chunk.parsedType || "text"),
     metadata: chunk.metadata != null ? JSON.stringify(chunk.metadata) : null,
-    structured: chunk.structured != null ? JSON.stringify(chunk.structured) : null,
+    structured:
+      chunk.structured != null ? JSON.stringify(chunk.structured) : null,
     county: String(chunk.county || ""),
     state: String(chunk.state || ""),
     chunk_index: chunk.chunkIndex ?? 0,
@@ -49,7 +60,9 @@ function chunkToRow(chunk) {
     original_stored_filename: chunk.originalStoredFilename ?? null,
     original_stored_path: chunk.originalStoredPath ?? null,
     original_stored_at: chunk.originalStoredAt ?? null,
-    embedding: Array.isArray(chunk.embedding) ? JSON.stringify(chunk.embedding) : null,
+    embedding: Array.isArray(chunk.embedding)
+      ? JSON.stringify(chunk.embedding)
+      : null,
     created_at: chunk.createdAt ?? new Date().toISOString(),
   };
 }
@@ -84,8 +97,11 @@ function readChunks({ county, state, documentId, source } = {}) {
     params.push(source);
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const rows = db.prepare(`SELECT * FROM upload_chunks ${where} ORDER BY created_at ASC`).all(...params);
+  const where =
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const rows = db
+    .prepare(`SELECT * FROM upload_chunks ${where} ORDER BY created_at ASC`)
+    .all(...params);
   return rows.map(rowToChunk);
 }
 
@@ -123,10 +139,13 @@ function insertChunks(chunks) {
  * Update the stored embedding for a single chunk.
  * @param {string} id
  * @param {number[]} embedding
+ * @param {string} county
  */
-function updateChunkEmbedding(id, embedding) {
+function updateChunkEmbedding(id, embedding, county) {
   const value = Array.isArray(embedding) ? JSON.stringify(embedding) : null;
-  db.prepare("UPDATE upload_chunks SET embedding = ? WHERE id = ?").run(value, id);
+  db.prepare(
+    "UPDATE upload_chunks SET embedding = ? WHERE id = ? AND LOWER(county) = LOWER(?)",
+  ).run(value, id);
 }
 
 /**
@@ -137,7 +156,9 @@ function updateChunkEmbedding(id, embedding) {
  */
 function deleteChunksById(id, county) {
   const result = db
-    .prepare("DELETE FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)")
+    .prepare(
+      "DELETE FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)",
+    )
     .run(id, county);
   return result.changes;
 }
@@ -150,7 +171,9 @@ function deleteChunksById(id, county) {
  */
 function deleteChunksBySource(source, county) {
   const result = db
-    .prepare("DELETE FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)")
+    .prepare(
+      "DELETE FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)",
+    )
     .run(source, county);
   return result.changes;
 }
@@ -162,13 +185,17 @@ function deleteChunksBySource(source, county) {
 function findChunkIds({ id, source, county }) {
   if (id) {
     const row = db
-      .prepare("SELECT id FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)")
+      .prepare(
+        "SELECT id FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)",
+      )
       .get(id, county);
     return row ? [row.id] : [];
   }
   if (source) {
     const rows = db
-      .prepare("SELECT id FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)")
+      .prepare(
+        "SELECT id FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)",
+      )
       .all(source, county);
     return rows.map((r) => r.id);
   }
@@ -183,4 +210,3 @@ module.exports = {
   deleteChunksBySource,
   findChunkIds,
 };
-
