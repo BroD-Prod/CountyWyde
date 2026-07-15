@@ -1,8 +1,8 @@
 const db = require("../lib/db");
 
-function getCounties(req, res) {
+async function getCounties(req, res) {
   try {
-    const counties = db
+    const counties = await db
       .prepare("SELECT name FROM counties ORDER BY name ASC")
       .all();
     res.statusCode = 200;
@@ -15,11 +15,11 @@ function getCounties(req, res) {
   }
 }
 
-function countyExists(name) {
+async function countyExists(name) {
   const county = String(name || "").trim();
   if (!county) return false;
 
-  const row = db
+  const row = await db
     .prepare("SELECT name FROM counties WHERE name = ?")
     .get(county);
   return Boolean(row);

@@ -264,15 +264,15 @@ function normalizeTranscript(transcript) {
     ? transcript.segments
     : Array.isArray(transcript?.transcription)
       ? transcript.transcription.map((segment, index) => ({
-          index,
-          start: Number.isFinite(Number(segment?.offsets?.from))
-            ? Number(segment.offsets.from)
-            : null,
-          end: Number.isFinite(Number(segment?.offsets?.to))
-            ? Number(segment.offsets.to)
-            : null,
-          text: String(segment?.text || "").trim(),
-        }))
+        index,
+        start: Number.isFinite(Number(segment?.offsets?.from))
+          ? Number(segment.offsets.from)
+          : null,
+        end: Number.isFinite(Number(segment?.offsets?.to))
+          ? Number(segment.offsets.to)
+          : null,
+        text: String(segment?.text || "").trim(),
+      }))
       : [];
   const textFromSegments = segmentList
     .map((segment) => String(segment?.text || "").trim())
@@ -329,11 +329,11 @@ function buildTranscriptUploadRecords(
 }
 
 async function upsertTranscriptUploads(records) {
-  insertChunks(records);
+  await insertChunks(records);
 }
 
 async function uploadVideoFile(req, res) {
-  const user = helperController.getAuthenticatedUser(req, {
+  const user = await helperController.getAuthenticatedUser(req, {
     includeState: true,
     cleanupExpired: true,
   });
@@ -395,7 +395,7 @@ async function uploadVideoFile(req, res) {
       writeStream.destroy();
       req.resume();
       finalized = true;
-      fs.unlink(filePath).catch(() => {});
+      fs.unlink(filePath).catch(() => { });
       sendJson(res, 413, {
         error: `File exceeds the ${MAX_VIDEO_BYTES / (1024 * 1024)} MB limit`,
       });

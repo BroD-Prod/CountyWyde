@@ -57,7 +57,7 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(String(token)).digest("hex");
 }
 
-function getAuthenticatedUser(req, options = {}) {
+async function getAuthenticatedUser(req, options = {}) {
   const { includeState = false, cleanupExpired = true } = options;
 
   const cookies = parseCookies(req.headers.cookie);
@@ -71,31 +71,29 @@ function getAuthenticatedUser(req, options = {}) {
   const now = Date.now();
 
   if (cleanupExpired) {
-    db.prepare(
-      "DELETE FROM sessions WHERE CAST(expires_at AS INTEGER) <= ?",
-    ).run(now);
+    await db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
   }
 
   if (includeState) {
     return (
-      db
+      (await db
         .prepare(
           `SELECT a.id, a.username, a.county, st.name AS state_name, st.abbreviation AS state_abbreviation
              FROM sessions s
              JOIN accounts a ON a.id = s.user_id
              JOIN states st ON st.id = a.state_id
-             WHERE s.token = ? AND CAST(s.expires_at AS INTEGER) > ?`,
+             WHERE s.token = ? AND s.expires_at > ?`,
         )
-        .get(tokenHash, now) || null
+        .get(tokenHash, now)) || null
     );
   }
 
   return (
-    db
+    (await db
       .prepare(
-        "SELECT a.id, a.username, a.county FROM sessions s JOIN accounts a ON a.id = s.user_id WHERE s.token = ? AND CAST(s.expires_at AS INTEGER) > ?",
+        "SELECT a.id, a.username, a.county FROM sessions s JOIN accounts a ON a.id = s.user_id WHERE s.token = ? AND s.expires_at > ?",
       )
-      .get(tokenHash, now) || null
+      .get(tokenHash, now)) || null
   );
 }
 

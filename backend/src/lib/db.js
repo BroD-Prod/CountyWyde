@@ -1,16 +1,4 @@
-const fs = require("node:fs");
-const path = require("node:path");
-const Database = require("better-sqlite3");
-
-const dataDir = path.join(__dirname, "../../data");
-fs.mkdirSync(dataDir, { recursive: true });
-
-const dbPath = path.join(dataDir, "app.db");
-const db = new Database(dbPath);
-
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
-db.pragma("busy_timeout = 5000");
+const { Pool } = require("pg");
 
 const STATES = [
   { name: "Alabama", abbreviation: "AL" },
@@ -65,113 +53,141 @@ const STATES = [
   { name: "Wyoming", abbreviation: "WY" },
 ];
 
-function createCoreTables() {
-  db.exec(`CREATE TABLE IF NOT EXISTS states (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  throw new Error("Missing DATABASE_URL environment variable for PostgreSQL");
+}
+
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl:
+    process.env.PGSSL === "require" || process.env.NODE_ENV === "production"
+      ? { rejectUnauthorized: false }
+      : undefined,
+});
+
+function convertSqlPlaceholders(sql) {
+  let index = 1;
+  let out = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const char = sql[i];
+    const next = sql[i + 1];
+
+    if (char === "'" && !inDoubleQuote) {
+      if (inSingleQuote && next === "'") {
+        out += "''";
+        i += 1;
+        continue;
+      }
+      inSingleQuote = !inSingleQuote;
+      out += char;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      out += char;
+      continue;
+    }
+
+    if (char === "?" && !inSingleQuote && !inDoubleQuote) {
+      out += `$${index}`;
+      index += 1;
+      continue;
+    }
+
+    out += char;
+  }
+
+  return out;
+}
+
+async function rawQuery(sql, params = [], client = pool) {
+  return client.query(convertSqlPlaceholders(sql), params);
+}
+
+async function createCoreTables() {
+  await rawQuery(`
+    CREATE TABLE IF NOT EXISTS states (
+      id SERIAL PRIMARY KEY,
       name TEXT UNIQUE NOT NULL,
       abbreviation TEXT UNIQUE NOT NULL
-  );`);
-
-  db.exec(`
-      CREATE TABLE IF NOT EXISTS accounts (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          username TEXT UNIQUE NOT NULL,
-          password_hash TEXT NOT NULL,
-          county TEXT NOT NULL,
-          state_id INTEGER,
-          approved INTEGER NOT NULL DEFAULT 0,
-          FOREIGN KEY (state_id) REFERENCES states(id)
-      );
+    );
   `);
 
-  db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    token TEXT UNIQUE NOT NULL,
-    expires_at TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
-  );`);
+  await rawQuery(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id SERIAL PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      county TEXT NOT NULL,
+      state_id INTEGER,
+      approved BOOLEAN NOT NULL DEFAULT FALSE,
+      FOREIGN KEY (state_id) REFERENCES states(id)
+    );
+  `);
+
+  await rawQuery(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      token TEXT UNIQUE NOT NULL,
+      expires_at BIGINT NOT NULL,
+      created_at BIGINT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
+    );
+  `);
 }
 
-function seedStates() {
-  const insertState = db.prepare(
-    "INSERT OR IGNORE INTO states (name, abbreviation) VALUES (?, ?)",
-  );
-  const insertStates = db.transaction((states) => {
-    for (const state of states) {
-      insertState.run(state.name, state.abbreviation);
-    }
-  });
-  insertStates(STATES);
-}
-
-function migrateAccountsTable() {
-  const accountColumns = db.prepare("PRAGMA table_info(accounts)").all();
-  const hasCountyColumn = accountColumns.some(
-    (column) => column.name === "county",
-  );
-  const hasStateIdColumn = accountColumns.some(
-    (column) => column.name === "state_id",
-  );
-  const hasLegacyStateColumn = accountColumns.some(
-    (column) => column.name === "state",
-  );
-  const hasApprovedColumn = accountColumns.some(
-    (column) => column.name === "approved",
-  );
-
-  if (!hasCountyColumn) {
-    db.exec("ALTER TABLE accounts ADD COLUMN county TEXT;");
-    db.exec(
-      "UPDATE accounts SET county = 'Unknown County' WHERE county IS NULL OR TRIM(county) = '';",
+async function seedStates() {
+  for (const state of STATES) {
+    await rawQuery(
+      "INSERT INTO states (name, abbreviation) VALUES (?, ?) ON CONFLICT DO NOTHING",
+      [state.name, state.abbreviation],
     );
   }
-
-  if (!hasStateIdColumn) {
-    db.exec("ALTER TABLE accounts ADD COLUMN state_id INTEGER;");
-  }
-
-  if (!hasApprovedColumn) {
-    db.exec("ALTER TABLE accounts ADD COLUMN approved INTEGER;");
-    db.exec("UPDATE accounts SET approved = 1 WHERE approved IS NULL;");
-  }
-
-  if (hasLegacyStateColumn) {
-    db.exec(`
-          UPDATE accounts
-          SET state_id = (
-              SELECT s.id
-              FROM states s
-              WHERE LOWER(s.name) = LOWER(accounts.state)
-                 OR UPPER(s.abbreviation) = UPPER(accounts.state)
-              LIMIT 1
-          )
-          WHERE state_id IS NULL;
-      `);
-  }
-
-  const defaultStateId =
-    db.prepare("SELECT id FROM states WHERE abbreviation = 'AL' LIMIT 1").get()
-      ?.id || 1;
-  db.prepare("UPDATE accounts SET state_id = ? WHERE state_id IS NULL").run(
-    defaultStateId,
-  );
 }
 
-function createTranscriptionTables() {
-  db.exec(`
+async function migrateAccountsTable() {
+  await rawQuery("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS county TEXT");
+  await rawQuery(
+    "UPDATE accounts SET county = 'Unknown County' WHERE county IS NULL OR TRIM(county) = ''",
+  );
+
+  await rawQuery(
+    "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS state_id INTEGER",
+  );
+  await rawQuery(
+    "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS approved BOOLEAN DEFAULT FALSE",
+  );
+  await rawQuery(
+    "UPDATE accounts SET approved = TRUE WHERE approved IS NULL",
+  );
+
+  const defaultState = await rawQuery(
+    "SELECT id FROM states WHERE abbreviation = 'AL' LIMIT 1",
+  );
+  const defaultStateId = defaultState.rows[0]?.id || 1;
+  await rawQuery("UPDATE accounts SET state_id = ? WHERE state_id IS NULL", [
+    defaultStateId,
+  ]);
+}
+
+async function createTranscriptionTables() {
+  await rawQuery(`
     CREATE TABLE IF NOT EXISTS uploads(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id BIGSERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL,
       county TEXT NOT NULL,
       state_id INTEGER NOT NULL,
       original_filename TEXT NOT NULL,
       mime_type TEXT NOT NULL,
       storage_key_or_path TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
-      duration_seconds REAL CHECK (duration_seconds IS NULL OR duration_seconds >= 0),
+      size_bytes BIGINT NOT NULL CHECK (size_bytes >= 0),
+      duration_seconds DOUBLE PRECISION CHECK (duration_seconds IS NULL OR duration_seconds >= 0),
       status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
       error_message TEXT,
       created_at TEXT NOT NULL,
@@ -181,10 +197,10 @@ function createTranscriptionTables() {
     );
   `);
 
-  db.exec(`
+  await rawQuery(`
     CREATE TABLE IF NOT EXISTS transcription_jobs(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      upload_id INTEGER NOT NULL,
+      id BIGSERIAL PRIMARY KEY,
+      upload_id BIGINT NOT NULL,
       engine TEXT NOT NULL,
       model_name TEXT NOT NULL,
       language TEXT,
@@ -198,17 +214,17 @@ function createTranscriptionTables() {
     );
   `);
 
-  db.exec(`
+  await rawQuery(`
     CREATE TABLE IF NOT EXISTS transcript_segments(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      upload_id INTEGER NOT NULL,
-      job_id INTEGER NOT NULL,
+      id BIGSERIAL PRIMARY KEY,
+      upload_id BIGINT NOT NULL,
+      job_id BIGINT NOT NULL,
       segment_index INTEGER NOT NULL CHECK (segment_index >= 0),
-      start_sec REAL NOT NULL CHECK (start_sec >= 0),
-      end_sec REAL NOT NULL CHECK (end_sec >= start_sec),
+      start_sec DOUBLE PRECISION NOT NULL CHECK (start_sec >= 0),
+      end_sec DOUBLE PRECISION NOT NULL CHECK (end_sec >= start_sec),
       text TEXT NOT NULL,
-      confidence_avg REAL,
-      no_speech_prob REAL,
+      confidence_avg DOUBLE PRECISION,
+      no_speech_prob DOUBLE PRECISION,
       created_at TEXT NOT NULL,
       FOREIGN KEY (upload_id) REFERENCES uploads(id) ON DELETE CASCADE,
       FOREIGN KEY (job_id) REFERENCES transcription_jobs(id) ON DELETE CASCADE,
@@ -216,19 +232,19 @@ function createTranscriptionTables() {
     );
   `);
 
-  db.exec(`
+  await rawQuery(`
     CREATE TABLE IF NOT EXISTS transcript_chunks(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      upload_id INTEGER NOT NULL,
-      job_id INTEGER NOT NULL,
+      id BIGSERIAL PRIMARY KEY,
+      upload_id BIGINT NOT NULL,
+      job_id BIGINT NOT NULL,
       user_id INTEGER NOT NULL,
       county TEXT NOT NULL,
       state_id INTEGER NOT NULL,
       chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
       content TEXT NOT NULL,
       raw_content TEXT,
-      start_sec_min REAL NOT NULL CHECK (start_sec_min >= 0),
-      end_sec_max REAL NOT NULL CHECK (end_sec_max >= start_sec_min),
+      start_sec_min DOUBLE PRECISION NOT NULL CHECK (start_sec_min >= 0),
+      end_sec_max DOUBLE PRECISION NOT NULL CHECK (end_sec_max >= start_sec_min),
       source TEXT NOT NULL,
       embedding_model TEXT NOT NULL,
       embedding_dim INTEGER NOT NULL CHECK (embedding_dim > 0),
@@ -243,51 +259,51 @@ function createTranscriptionTables() {
   `);
 }
 
-function createIndexes() {
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_accounts_state_id ON accounts(state_id);",
+async function createIndexes() {
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_accounts_state_id ON accounts(state_id)",
   );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);",
-  );
-
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_uploads_user_id ON uploads(user_id);",
-  );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_uploads_state_county_status ON uploads(state_id, county, status);",
-  );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_uploads_status_created_at ON uploads(status, created_at);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
   );
 
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_jobs_upload_id ON transcription_jobs(upload_id);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_uploads_user_id ON uploads(user_id)",
   );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_jobs_status_created_at ON transcription_jobs(status, created_at);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_uploads_state_county_status ON uploads(state_id, county, status)",
   );
-
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_segments_upload_segment ON transcript_segments(upload_id, segment_index);",
-  );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_segments_job_segment ON transcript_segments(job_id, segment_index);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_uploads_status_created_at ON uploads(status, created_at)",
   );
 
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_chunks_state_county ON transcript_chunks(state_id, county);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_jobs_upload_id ON transcription_jobs(upload_id)",
   );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_chunks_upload_chunk ON transcript_chunks(upload_id, chunk_index);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_jobs_status_created_at ON transcription_jobs(status, created_at)",
   );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_chunks_user_created_at ON transcript_chunks(user_id, created_at);",
+
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_segments_upload_segment ON transcript_segments(upload_id, segment_index)",
+  );
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_segments_job_segment ON transcript_segments(job_id, segment_index)",
+  );
+
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_chunks_state_county ON transcript_chunks(state_id, county)",
+  );
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_chunks_upload_chunk ON transcript_chunks(upload_id, chunk_index)",
+  );
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_chunks_user_created_at ON transcript_chunks(user_id, created_at)",
   );
 }
 
-function createUploadChunksTable() {
-  db.exec(`
+async function createUploadChunksTable() {
+  await rawQuery(`
     CREATE TABLE IF NOT EXISTS upload_chunks (
       id TEXT PRIMARY KEY,
       source TEXT NOT NULL,
@@ -303,7 +319,7 @@ function createUploadChunksTable() {
       document_id TEXT,
       original_file_name TEXT,
       original_mime_type TEXT,
-      original_size INTEGER,
+      original_size BIGINT,
       original_stored_filename TEXT,
       original_stored_path TEXT,
       original_stored_at TEXT,
@@ -312,26 +328,151 @@ function createUploadChunksTable() {
     );
   `);
 
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_county_state ON upload_chunks(county, state);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_county_state ON upload_chunks(county, state)",
   );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_document_id ON upload_chunks(document_id);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_document_id ON upload_chunks(document_id)",
   );
-  db.exec(
-    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_source_county ON upload_chunks(source, county);",
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_upload_chunks_source_county ON upload_chunks(source, county)",
   );
 }
 
-function initializeDb() {
-  createCoreTables();
-  seedStates();
-  migrateAccountsTable();
-  createTranscriptionTables();
-  createUploadChunksTable();
-  createIndexes();
+async function createSecurityTables() {
+  await rawQuery(`
+    CREATE TABLE IF NOT EXISTS security_rate_limits (
+      ip TEXT NOT NULL,
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      count INTEGER NOT NULL,
+      reset_at BIGINT NOT NULL,
+      updated_at BIGINT NOT NULL,
+      PRIMARY KEY (ip, method, path)
+    )
+  `);
+
+  await rawQuery(`
+    CREATE TABLE IF NOT EXISTS security_blocks (
+      ip TEXT PRIMARY KEY,
+      blocked_until BIGINT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    )
+  `);
+
+  await rawQuery(`
+    CREATE TABLE IF NOT EXISTS security_suspicion (
+      ip TEXT PRIMARY KEY,
+      score INTEGER NOT NULL,
+      reset_at BIGINT NOT NULL,
+      updated_at BIGINT NOT NULL
+    )
+  `);
+
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_security_rate_limits_reset_at ON security_rate_limits(reset_at)",
+  );
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_security_blocks_blocked_until ON security_blocks(blocked_until)",
+  );
+  await rawQuery(
+    "CREATE INDEX IF NOT EXISTS idx_security_suspicion_reset_at ON security_suspicion(reset_at)",
+  );
 }
 
-initializeDb();
+async function initializeDb() {
+  await createCoreTables();
+  await seedStates();
+  await migrateAccountsTable();
+  await createTranscriptionTables();
+  await createUploadChunksTable();
+  await createSecurityTables();
+  await createIndexes();
+}
 
-module.exports = db;
+const ready = initializeDb();
+
+async function query(sql, params = []) {
+  await ready;
+  return rawQuery(sql, params);
+}
+
+async function exec(sql, params = []) {
+  await query(sql, params);
+}
+
+async function get(sql, params = []) {
+  const result = await query(sql, params);
+  return result.rows[0] || null;
+}
+
+async function all(sql, params = []) {
+  const result = await query(sql, params);
+  return result.rows;
+}
+
+async function run(sql, params = []) {
+  const result = await query(sql, params);
+  return {
+    changes: result.rowCount,
+    rows: result.rows,
+  };
+}
+
+function prepare(sql) {
+  return {
+    get: (...params) => get(sql, params),
+    all: (...params) => all(sql, params),
+    run: (...params) => run(sql, params),
+  };
+}
+
+async function transaction(work) {
+  await ready;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const tx = {
+      query: (sql, params = []) => rawQuery(sql, params, client),
+      exec: (sql, params = []) => rawQuery(sql, params, client).then(() => { }),
+      get: async (sql, params = []) => {
+        const result = await rawQuery(sql, params, client);
+        return result.rows[0] || null;
+      },
+      all: async (sql, params = []) => {
+        const result = await rawQuery(sql, params, client);
+        return result.rows;
+      },
+      run: async (sql, params = []) => {
+        const result = await rawQuery(sql, params, client);
+        return {
+          changes: result.rowCount,
+          rows: result.rows,
+        };
+      },
+    };
+
+    const result = await work(tx);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = {
+  pool,
+  ready,
+  query,
+  exec,
+  get,
+  all,
+  run,
+  prepare,
+  transaction,
+};

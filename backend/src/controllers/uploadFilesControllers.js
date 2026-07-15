@@ -169,7 +169,7 @@ function normalizeParsed(parsed, source, county, state) {
 
 async function uploadFile(req, res) {
   try {
-    const user = helperController.getAuthenticatedUser(req, {
+    const user = await helperController.getAuthenticatedUser(req, {
       includeState: true,
       cleanupExpired: true,
     });
@@ -279,15 +279,15 @@ async function uploadFile(req, res) {
 
       const recordsWithDocument = documentMetadata
         ? parsedRecords.map((record) => ({
-            ...record,
-            documentId: documentMetadata.documentId,
-            originalFileName: documentMetadata.originalName,
-            originalMimeType: documentMetadata.mimeType,
-            originalSize: documentMetadata.size,
-            originalStoredFilename: documentMetadata.storedFilename,
-            originalStoredPath: documentMetadata.storedPath,
-            originalStoredAt: documentMetadata.createdAt,
-          }))
+          ...record,
+          documentId: documentMetadata.documentId,
+          originalFileName: documentMetadata.originalName,
+          originalMimeType: documentMetadata.mimeType,
+          originalSize: documentMetadata.size,
+          originalStoredFilename: documentMetadata.storedFilename,
+          originalStoredPath: documentMetadata.storedPath,
+          originalStoredAt: documentMetadata.createdAt,
+        }))
         : parsedRecords;
 
       normalized = normalized.concat(recordsWithDocument);
@@ -320,7 +320,7 @@ async function uploadFile(req, res) {
       );
     }
 
-    insertChunks(normalized);
+    await insertChunks(normalized);
 
     res.statusCode = 201;
     res.end(
@@ -337,7 +337,7 @@ async function uploadFile(req, res) {
 }
 
 async function getUpload(req, res) {
-  const user = helperController.getAuthenticatedUser(req, {
+  const user = await helperController.getAuthenticatedUser(req, {
     includeState: false,
     cleanupExpired: true,
   });
@@ -348,7 +348,7 @@ async function getUpload(req, res) {
   }
 
   const county = normalizeCounty(user.county);
-  const countyUploads = readChunks({ county });
+  const countyUploads = await readChunks({ county });
   res.statusCode = 200;
   res.end(
     JSON.stringify({ total: countyUploads.length, uploads: countyUploads }),
@@ -472,7 +472,7 @@ async function getOriginalDocument(req, res, documentId) {
       return;
     }
 
-    const chunks = readChunks({ documentId: requestedId });
+    const chunks = await readChunks({ documentId: requestedId });
     const record =
       chunks.find(
         (item) =>
@@ -508,7 +508,7 @@ async function getOriginalDocumentBySource(req, res) {
       return;
     }
 
-    const chunks = readChunks({ source, county, state });
+    const chunks = await readChunks({ source, county, state });
     const record =
       chunks.find(
         (item) =>
@@ -531,7 +531,7 @@ async function getOriginalDocumentBySource(req, res) {
 
 async function deleteUpload(req, res) {
   try {
-    const user = helperController.getAuthenticatedUser(req, {
+    const user = await helperController.getAuthenticatedUser(req, {
       includeState: false,
       cleanupExpired: true,
     });
@@ -547,21 +547,21 @@ async function deleteUpload(req, res) {
     let deleted = 0;
 
     if (payload.id) {
-      const ids = findChunkIds({ id: payload.id, county });
+      const ids = await findChunkIds({ id: payload.id, county });
       if (ids.length > 0) {
         try {
           await deleteChunks(ids);
-        } catch {}
+        } catch { }
       }
-      deleted = deleteChunksById(payload.id, county);
+      deleted = await deleteChunksById(payload.id, county);
     } else if (payload.source) {
-      const ids = findChunkIds({ source: payload.source, county });
+      const ids = await findChunkIds({ source: payload.source, county });
       if (ids.length > 0) {
         try {
           await deleteChunks(ids);
-        } catch {}
+        } catch { }
       }
-      deleted = deleteChunksBySource(payload.source, county);
+      deleted = await deleteChunksBySource(payload.source, county);
     } else {
       res.statusCode = 400;
       res.end(JSON.stringify({ error: "Provide id or source to delete" }));
