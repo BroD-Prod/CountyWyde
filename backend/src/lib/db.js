@@ -243,6 +243,44 @@ function createTranscriptionTables() {
   `);
 }
 
+function createTwoFactorTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS account_2fa_challenges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      challenge_token_hash TEXT UNIQUE NOT NULL,
+      otp_hash TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      last_sent_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      consumed_at INTEGER,
+      FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
+    );
+  `);
+}
+
+function createAccountRequestTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS account_creation_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      full_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      county TEXT NOT NULL,
+      state_id INTEGER NOT NULL,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'denied')),
+      account_id INTEGER,
+      review_notes TEXT,
+      reviewed_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (state_id) REFERENCES states(id),
+      FOREIGN KEY (account_id) REFERENCES accounts(id)
+    );
+  `);
+}
+
 function createIndexes() {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_accounts_state_id ON accounts(state_id);",
@@ -284,6 +322,17 @@ function createIndexes() {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_chunks_user_created_at ON transcript_chunks(user_id, created_at);",
   );
+
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_2fa_user_id_expires_at ON account_2fa_challenges(user_id, expires_at);",
+  );
+
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_account_requests_status_created ON account_creation_requests(status, created_at);",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_account_requests_email_status ON account_creation_requests(email, status);",
+  );
 }
 
 function initializeDb() {
@@ -291,6 +340,8 @@ function initializeDb() {
   seedStates();
   migrateAccountsTable();
   createTranscriptionTables();
+  createTwoFactorTables();
+  createAccountRequestTables();
   createIndexes();
 }
 

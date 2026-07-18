@@ -14,6 +14,9 @@ const {
 } = require("./src/controllers/uploadFilesControllers");
 const {
   login,
+  verifyTwoFactor,
+  resendTwoFactor,
+  requestAccountAccess,
   createAccount,
   deleteAccount,
   getAccount,
@@ -24,6 +27,9 @@ const {
   getPendingAccounts,
   approveAccount,
   rejectAccount,
+  getPendingAccountRequests,
+  approveAccountRequest,
+  rejectAccountRequest,
   getSecurityOverview,
   clearSecurityState,
 } = require("./src/controllers/accountControllers");
@@ -158,6 +164,11 @@ const server = createServer((req, res) => {
       return;
     }
 
+    if (path === "/account/request-access" && req.method === "POST") {
+      requestAccountAccess(req, res);
+      return;
+    }
+
     if (path === "/account/delete" && req.method === "DELETE") {
       deleteAccount(req, res);
       return;
@@ -165,6 +176,16 @@ const server = createServer((req, res) => {
 
     if (path === "/account/login" && req.method === "POST") {
       login(req, res);
+      return;
+    }
+
+    if (path === "/account/2fa/verify" && req.method === "POST") {
+      verifyTwoFactor(req, res);
+      return;
+    }
+
+    if (path === "/account/2fa/resend" && req.method === "POST") {
+      resendTwoFactor(req, res);
       return;
     }
 
@@ -195,6 +216,21 @@ const server = createServer((req, res) => {
 
     if (path === "/admin/pending" && req.method === "GET") {
       getPendingAccounts(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests" && req.method === "GET") {
+      getPendingAccountRequests(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests/approve" && req.method === "PATCH") {
+      approveAccountRequest(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests/reject" && req.method === "DELETE") {
+      rejectAccountRequest(req, res);
       return;
     }
 

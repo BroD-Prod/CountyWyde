@@ -52,6 +52,12 @@ export default function Login() {
         return;
       }
 
+      if (data.requiresTwoFactor) {
+        router.replace("/verify");
+        router.refresh();
+        return;
+      }
+
       router.replace("/account");
       router.refresh();
     } catch {
@@ -107,10 +113,10 @@ export default function Login() {
           <h2 className="mt-6 text-center text-sm text-slate-500">
             Don&apos;t have an account?{" "}
             <a
-              href="/account/signup"
+              href="/contact"
               className="font-semibold text-slate-700 hover:text-slate-900"
             >
-              Sign Up
+              Contact Us
             </a>
           </h2>
         </div>
