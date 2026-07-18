@@ -121,6 +121,9 @@ function migrateAccountsTable() {
   const hasApprovedColumn = accountColumns.some(
     (column) => column.name === "approved",
   );
+  const hasMustChangePasswordColumn = accountColumns.some(
+    (column) => column.name === "must_change_password",
+  );
 
   if (!hasCountyColumn) {
     db.exec("ALTER TABLE accounts ADD COLUMN county TEXT;");
@@ -137,6 +140,14 @@ function migrateAccountsTable() {
     db.exec("ALTER TABLE accounts ADD COLUMN approved INTEGER;");
     db.exec("UPDATE accounts SET approved = 1 WHERE approved IS NULL;");
   }
+
+  if (!hasMustChangePasswordColumn) {
+    db.exec("ALTER TABLE accounts ADD COLUMN must_change_password INTEGER;");
+  }
+
+  db.exec(
+    "UPDATE accounts SET must_change_password = 0 WHERE must_change_password IS NULL;",
+  );
 
   if (hasLegacyStateColumn) {
     db.exec(`
@@ -261,6 +272,20 @@ function createTwoFactorTables() {
   `);
 }
 
+function createPasswordResetTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS account_password_reset_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      reset_token_hash TEXT UNIQUE NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      consumed_at INTEGER,
+      FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
+    );
+  `);
+}
+
 function createAccountRequestTables() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS account_creation_requests (
@@ -328,6 +353,10 @@ function createIndexes() {
   );
 
   db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_password_reset_user_id_expires_at ON account_password_reset_tokens(user_id, expires_at);",
+  );
+
+  db.exec(
     "CREATE INDEX IF NOT EXISTS idx_account_requests_status_created ON account_creation_requests(status, created_at);",
   );
   db.exec(
@@ -341,6 +370,7 @@ function initializeDb() {
   migrateAccountsTable();
   createTranscriptionTables();
   createTwoFactorTables();
+  createPasswordResetTables();
   createAccountRequestTables();
   createIndexes();
 }

@@ -15,9 +15,11 @@ export default function Login() {
       method: "GET",
       credentials: "include",
     })
-      .then((res) => {
+      .then(async (res) => {
         if (res.ok) {
-          router.replace("/account");
+          const data = await res.json();
+          const mustChangePassword = Boolean(data?.user?.mustChangePassword);
+          router.replace(mustChangePassword ? "/account/change-password" : "/account");
           return;
         }
 
@@ -54,6 +56,12 @@ export default function Login() {
 
       if (data.requiresTwoFactor) {
         router.replace("/verify");
+        router.refresh();
+        return;
+      }
+
+      if (data.requiresPasswordChange) {
+        router.replace("/account/change-password");
         router.refresh();
         return;
       }
@@ -108,6 +116,14 @@ export default function Login() {
             >
               Login
             </button>
+            <div className="text-center">
+              <a
+                href="/account/forgot-password"
+                className="text-sm font-semibold text-slate-600 transition hover:text-slate-900"
+              >
+                Forgot password?
+              </a>
+            </div>
           </form>
 
           <h2 className="mt-6 text-center text-sm text-slate-500">

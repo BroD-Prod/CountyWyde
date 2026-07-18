@@ -75,7 +75,7 @@ async function appendJsonLine(filePath, payload) {
   try {
     await fs.mkdir(LOG_DIR, { recursive: true });
     await fs.appendFile(filePath, `${JSON.stringify(payload)}\n`, "utf8");
-  } catch {}
+  } catch { }
 }
 
 function getClientIp(req) {
@@ -83,6 +83,26 @@ function getClientIp(req) {
     .split(",")[0]
     .trim();
   return forwarded || req.socket?.remoteAddress || "unknown";
+}
+
+function isLocalhostIp(ip) {
+  const normalizedIp = String(ip || "").trim().toLowerCase();
+  return (
+    normalizedIp === "localhost" ||
+    normalizedIp === "127.0.0.1" ||
+    normalizedIp === "::1" ||
+    normalizedIp === "::ffff:127.0.0.1" ||
+    normalizedIp === "0:0:0:0:0:0:0:1"
+  );
+}
+
+function isDevelopmentLocalRequest(req, ip) {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
+  const candidateIp = ip || getClientIp(req);
+  return isLocalhostIp(candidateIp);
 }
 
 function getPath(req) {
@@ -141,10 +161,18 @@ function getBlockInfo(ip) {
 
 function isBlocked(req) {
   const ip = getClientIp(req);
+  if (isDevelopmentLocalRequest(req, ip)) {
+    return null;
+  }
+
   return getBlockInfo(ip);
 }
 
 function blockIp(ip, reason) {
+  if (process.env.NODE_ENV !== "production" && isLocalhostIp(ip)) {
+    return;
+  }
+
   const blockedUntil = Date.now() + BLOCK_DURATION_MS;
   db.prepare(
     `INSERT INTO security_blocks (ip, blocked_until, reason, created_at)
@@ -244,6 +272,10 @@ function addSuspicion(req, delta, reason) {
   }
 
   const ip = getClientIp(req);
+  if (isDevelopmentLocalRequest(req, ip)) {
+    return;
+  }
+
   const now = Date.now();
   cleanupExpiredSecurityRows();
 

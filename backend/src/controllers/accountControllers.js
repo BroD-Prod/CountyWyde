@@ -2,7 +2,7 @@ const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const db = require("../lib/db");
 const security = require("../lib/security");
-const { sendTwoFactorEmail } = require("../lib/email");
+const { sendTwoFactorEmail, sendPasswordResetEmail } = require("../lib/email");
 const helperController = require("./helperController");
 const {
   normalizeCounty,
@@ -20,12 +20,16 @@ const TWO_FACTOR_TTL_MS = 10 * 60 * 1000;
 const TWO_FACTOR_MAX_ATTEMPTS = 5;
 const TWO_FACTOR_RESEND_COOLDOWN_MS = 45 * 1000;
 const TWO_FACTOR_CODE_LENGTH = 6;
+const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const LOGIN_RATE_LIMIT = 10;
 const SIGNUP_RATE_LIMIT = 10;
 const DELETE_RATE_LIMIT = 10;
 const UPDATE_RATE_LIMIT = 30;
+const CHANGE_PASSWORD_RATE_LIMIT = 20;
+const FORGOT_PASSWORD_RATE_LIMIT = 10;
+const RESET_PASSWORD_RATE_LIMIT = 10;
 const rateWindow = new Map();
 
 function getClientIp(req) {
@@ -227,7 +231,7 @@ async function requestAccountAccess(req, res) {
       .prepare(
         `SELECT id
          FROM account_creation_requests
-         WHERE email = ?
+         WHERE LOWER(email) = LOWER(?)
            AND county = ?
            AND state_id = ?
            AND status = 'pending'
@@ -247,7 +251,7 @@ async function requestAccountAccess(req, res) {
     }
 
     const existingAccount = db
-      .prepare("SELECT id FROM accounts WHERE username = ? LIMIT 1")
+      .prepare("SELECT id FROM accounts WHERE LOWER(username) = LOWER(?) LIMIT 1")
       .get(requestorEmail);
     if (existingAccount) {
       res.statusCode = 409;
@@ -292,10 +296,13 @@ async function createAccount(req, res) {
   try {
     const { username, password, county, state } =
       await helperController.parseJsonBody(req, MAX_JSON_BYTES);
+    const normalizedUsername = String(username || "")
+      .trim()
+      .toLowerCase();
     const selectedCounty = normalizeCounty(county);
     const selectedState = resolveState(state);
 
-    if (!username || !password || !selectedCounty || !state) {
+    if (!normalizedUsername || !password || !selectedCounty || !state) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "application/json");
       res.end(
@@ -321,8 +328,8 @@ async function createAccount(req, res) {
     }
 
     const existing = db
-      .prepare("SELECT 1 FROM accounts WHERE username = ?")
-      .get(username);
+      .prepare("SELECT 1 FROM accounts WHERE LOWER(username) = LOWER(?) LIMIT 1")
+      .get(normalizedUsername);
     if (existing) {
       res.statusCode = 409;
       res.setHeader("Content-Type", "application/json");
@@ -333,7 +340,7 @@ async function createAccount(req, res) {
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
     db.prepare(
       "INSERT INTO accounts (username, password_hash, county, state_id, approved) VALUES (?, ?, ?, ?, 0)",
-    ).run(username, hashedPassword, selectedCounty, selectedState.id);
+    ).run(normalizedUsername, hashedPassword, selectedCounty, selectedState.id);
 
     res.statusCode = 201;
     res.setHeader("Content-Type", "application/json");
@@ -555,7 +562,7 @@ async function verifyTwoFactor(req, res) {
     const challengeTokenHash = helperController.hashToken(twoFactorToken);
     const challenge = db
       .prepare(
-        `SELECT c.*, a.username
+        `SELECT c.*, a.username, a.must_change_password
          FROM account_2fa_challenges c
          JOIN accounts a ON a.id = c.user_id
          WHERE c.challenge_token_hash = ?
@@ -627,7 +634,292 @@ async function verifyTwoFactor(req, res) {
     ]);
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ message: `Login successful for ${challenge.username}` }));
+    res.end(
+      JSON.stringify({
+        message: `Login successful for ${challenge.username}`,
+        requiresPasswordChange: Boolean(challenge.must_change_password),
+      }),
+    );
+  } catch (error) {
+    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
+  }
+}
+
+async function changePassword(req, res) {
+  if (checkRateLimit(req, "change-password", CHANGE_PASSWORD_RATE_LIMIT, res)) {
+    return;
+  }
+
+  const authUser = helperController.getAuthenticatedUser(req, {
+    includeState: true,
+    cleanupExpired: true,
+  });
+  if (!authUser) {
+    res.statusCode = 401;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "You must be signed in" }));
+    return;
+  }
+
+  try {
+    const { currentPassword, newPassword } = await helperController.parseJsonBody(
+      req,
+      MAX_JSON_BYTES,
+    );
+
+    const current = String(currentPassword || "");
+    const next = String(newPassword || "");
+
+    if (!current || !next) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({ error: "Current password and new password are required" }),
+      );
+      return;
+    }
+
+    if (next.length < 10) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({ error: "New password must be at least 10 characters" }),
+      );
+      return;
+    }
+
+    const account = db
+      .prepare("SELECT id, password_hash FROM accounts WHERE id = ? LIMIT 1")
+      .get(authUser.id);
+    if (!account) {
+      res.statusCode = 404;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Account not found" }));
+      return;
+    }
+
+    const validCurrentPassword = await bcrypt.compare(current, account.password_hash);
+    if (!validCurrentPassword) {
+      res.statusCode = 401;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Current password is incorrect" }));
+      return;
+    }
+
+    const sameAsCurrent = await bcrypt.compare(next, account.password_hash);
+    if (sameAsCurrent) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          error: "New password must be different from your current password",
+        }),
+      );
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(next, SALT_ROUNDS);
+    db.prepare(
+      "UPDATE accounts SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+    ).run(hashedPassword, authUser.id);
+
+    db.prepare("UPDATE sessions SET expires_at = ? WHERE user_id = ?").run(
+      Date.now() + SESSION_MAX_AGE_MS,
+      authUser.id,
+    );
+
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ message: "Password updated successfully" }));
+  } catch (error) {
+    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
+  }
+}
+
+async function requestPasswordReset(req, res) {
+  if (
+    checkRateLimit(req, "forgot-password", FORGOT_PASSWORD_RATE_LIMIT, res)
+  ) {
+    return;
+  }
+
+  const genericMessage =
+    "If this email exists, a password reset link has been sent.";
+  const isProduction = process.env.NODE_ENV === "production";
+
+  try {
+    const { email } = await helperController.parseJsonBody(req, MAX_JSON_BYTES);
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ message: genericMessage }));
+      return;
+    }
+
+    const now = Date.now();
+    db.prepare(
+      "DELETE FROM account_password_reset_tokens WHERE expires_at <= ?",
+    ).run(now);
+
+    const account = db
+      .prepare(
+        `SELECT id, username
+         FROM accounts
+         WHERE approved = 1 AND LOWER(username) = LOWER(?)
+         LIMIT 1`,
+      )
+      .get(normalizedEmail);
+
+    let developmentResetUrl = null;
+
+    if (account) {
+      const resetToken = crypto.randomBytes(48).toString("hex");
+      const resetTokenHash = helperController.hashToken(resetToken);
+      const expiresAt = now + PASSWORD_RESET_TTL_MS;
+
+      db.prepare(
+        "DELETE FROM account_password_reset_tokens WHERE user_id = ? AND consumed_at IS NULL",
+      ).run(account.id);
+
+      db.prepare(
+        `INSERT INTO account_password_reset_tokens (
+          user_id, reset_token_hash, expires_at, created_at, consumed_at
+        ) VALUES (?, ?, ?, ?, NULL)`,
+      ).run(account.id, resetTokenHash, expiresAt, now);
+
+      const frontendBaseUrl = String(
+        process.env.FRONTEND_BASE_URL || "http://localhost:3000",
+      )
+        .trim()
+        .replace(/\/$/, "");
+      const resetUrl = `${frontendBaseUrl}/account/reset-password?token=${encodeURIComponent(resetToken)}`;
+      if (!isProduction) {
+        developmentResetUrl = resetUrl;
+      }
+
+      try {
+        await sendPasswordResetEmail({
+          toEmail: account.username,
+          resetUrl,
+          ttlMinutes: Math.round(PASSWORD_RESET_TTL_MS / 60000),
+        });
+      } catch (error) {
+        if (isProduction) {
+          throw error;
+        }
+
+        console.warn(
+          `[password-reset] email delivery failed in non-production: ${error.message}`,
+        );
+        console.info(`[password-reset] reset link for ${account.username}: ${resetUrl}`);
+      }
+    }
+
+    const responseBody = { message: genericMessage };
+    if (!isProduction && developmentResetUrl) {
+      responseBody.resetUrl = developmentResetUrl;
+    }
+
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(responseBody));
+  } catch (error) {
+    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
+  }
+}
+
+async function resetPasswordWithToken(req, res) {
+  if (
+    checkRateLimit(req, "reset-password", RESET_PASSWORD_RATE_LIMIT, res)
+  ) {
+    return;
+  }
+
+  try {
+    const { token, newPassword } = await helperController.parseJsonBody(
+      req,
+      MAX_JSON_BYTES,
+    );
+
+    const candidateToken = String(token || "").trim();
+    const nextPassword = String(newPassword || "");
+
+    if (!candidateToken || !nextPassword) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Token and new password are required" }));
+      return;
+    }
+
+    if (nextPassword.length < 10) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({ error: "New password must be at least 10 characters" }),
+      );
+      return;
+    }
+
+    const now = Date.now();
+    const tokenHash = helperController.hashToken(candidateToken);
+    const resetRecord = db
+      .prepare(
+        `SELECT r.id, r.user_id, a.password_hash
+         FROM account_password_reset_tokens r
+         JOIN accounts a ON a.id = r.user_id
+         WHERE r.reset_token_hash = ?
+           AND r.consumed_at IS NULL
+           AND r.expires_at > ?
+         LIMIT 1`,
+      )
+      .get(tokenHash, now);
+
+    if (!resetRecord) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Reset link is invalid or expired" }));
+      return;
+    }
+
+    const sameAsCurrent = await bcrypt.compare(
+      nextPassword,
+      resetRecord.password_hash,
+    );
+    if (sameAsCurrent) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          error: "New password must be different from your current password",
+        }),
+      );
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(nextPassword, SALT_ROUNDS);
+    db.prepare(
+      "UPDATE accounts SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+    ).run(hashedPassword, resetRecord.user_id);
+
+    db.prepare(
+      "UPDATE account_password_reset_tokens SET consumed_at = ? WHERE id = ?",
+    ).run(now, resetRecord.id);
+
+    db.prepare("DELETE FROM sessions WHERE user_id = ?").run(resetRecord.user_id);
+
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ message: "Password reset successful" }));
   } catch (error) {
     res.statusCode = error.message === "Payload too large" ? 413 : 400;
     res.setHeader("Content-Type", "application/json");
@@ -742,6 +1034,7 @@ function getSession(req, res) {
         id: authUser.id,
         username: authUser.username,
         county: authUser.county,
+        mustChangePassword: Boolean(authUser.must_change_password),
         state: {
           name: authUser.state_name,
           abbreviation: authUser.state_abbreviation,
@@ -769,6 +1062,7 @@ function getAccount(req, res) {
     JSON.stringify({
       account: authUser.username,
       county: authUser.county,
+      mustChangePassword: Boolean(authUser.must_change_password),
       state: {
         name: authUser.state_name,
         abbreviation: authUser.state_abbreviation,
@@ -995,7 +1289,7 @@ function approveAccountRequest(req, res) {
       }
 
       const existing = db
-        .prepare("SELECT id FROM accounts WHERE username = ? LIMIT 1")
+        .prepare("SELECT id FROM accounts WHERE LOWER(username) = LOWER(?) LIMIT 1")
         .get(normalizedUsername);
       if (existing) {
         res.statusCode = 409;
@@ -1010,8 +1304,8 @@ function approveAccountRequest(req, res) {
 
       const result = db
         .prepare(
-          `INSERT INTO accounts (username, password_hash, county, state_id, approved)
-           VALUES (?, ?, ?, ?, 1)`,
+          `INSERT INTO accounts (username, password_hash, county, state_id, approved, must_change_password)
+           VALUES (?, ?, ?, ?, 1, 1)`,
         )
         .run(
           normalizedUsername,
@@ -1250,6 +1544,9 @@ module.exports = {
   getCounties,
   getStates,
   updateAccount,
+  changePassword,
+  requestPasswordReset,
+  resetPasswordWithToken,
   getPendingAccounts,
   approveAccount,
   rejectAccount,

@@ -60,7 +60,10 @@ export default function VerifyPage() {
 
             setSuccess("Code verified. Redirecting...");
             window.setTimeout(() => {
-                window.location.href = "/account";
+                const destination = payload?.requiresPasswordChange
+                    ? "/account/change-password"
+                    : "/account";
+                window.location.href = destination;
             }, 600);
         } catch {
             setError("Unable to verify right now. Please try again.");

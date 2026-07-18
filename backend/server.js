@@ -24,6 +24,9 @@ const {
   getCounties,
   getStates,
   updateAccount,
+  changePassword,
+  requestPasswordReset,
+  resetPasswordWithToken,
   getPendingAccounts,
   approveAccount,
   rejectAccount,
@@ -42,6 +45,14 @@ const {
 
 const hostname = "127.0.0.1";
 const port = 1337;
+const configuredFrontendOrigin = String(process.env.FRONTEND_ORIGIN || "").trim();
+const allowedOrigins = new Set(
+  [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    configuredFrontendOrigin,
+  ].filter(Boolean),
+);
 
 const server = createServer((req, res) => {
   const requestContext = security.beginRequest(req);
@@ -55,7 +66,13 @@ const server = createServer((req, res) => {
   };
 
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
+  const requestOrigin = String(req.headers.origin || "").trim();
+  const resolvedOrigin = allowedOrigins.has(requestOrigin)
+    ? requestOrigin
+    : "http://localhost:3000";
+
+  res.setHeader("Access-Control-Allow-Origin", resolvedOrigin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader(
     "Access-Control-Allow-Methods",
@@ -69,6 +86,12 @@ const server = createServer((req, res) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Cache-Control", "no-store");
+
+  if (req.method === "OPTIONS") {
+    res.statusCode = 200;
+    res.end();
+    return;
+  }
 
   const blockInfo = security.isBlocked(req);
   if (blockInfo) {
@@ -92,14 +115,7 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify({ error: rateLimit.error || "Too many requests" }));
     return;
   }
-
   const path = req.url.split("?")[0];
-
-  if (req.method === "OPTIONS") {
-    res.statusCode = 200;
-    res.end();
-    return;
-  }
 
   try {
     if (path === "/search" && req.method === "GET") {
@@ -206,6 +222,21 @@ const server = createServer((req, res) => {
 
     if (path === "/account/update" && req.method === "PATCH") {
       updateAccount(req, res);
+      return;
+    }
+
+    if (path === "/account/password" && req.method === "PATCH") {
+      changePassword(req, res);
+      return;
+    }
+
+    if (path === "/account/password/forgot" && req.method === "POST") {
+      requestPasswordReset(req, res);
+      return;
+    }
+
+    if (path === "/account/password/reset" && req.method === "POST") {
+      resetPasswordWithToken(req, res);
       return;
     }
 
