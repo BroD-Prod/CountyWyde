@@ -17,6 +17,8 @@ function isPdfSource(source: SearchSource): boolean {
   return name.endsWith(".pdf");
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
+
 export default function Home() {
   const [search, setSearch] = useState("");
   const [result, setResult] = useState("");
@@ -37,7 +39,7 @@ export default function Home() {
       return;
     }
 
-    fetch(`http://localhost:1337/counties?state=${encodeURIComponent(state)}`)
+    fetch(`${API_URL}/counties?state=${encodeURIComponent(state)}`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.counties)) {
@@ -50,7 +52,7 @@ export default function Home() {
   }, [state]);
 
   useEffect(() => {
-    fetch("http://localhost:1337/states")
+    fetch(`${API_URL}/states`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.states)) {
@@ -80,11 +82,12 @@ export default function Home() {
 
     setIsSearching(true);
     try {
-      const response = await fetch("http://localhost:1337/search", {
+      const response = await fetch(`${API_URL}/search`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({ prompt: search, county, state }),
       });
 
@@ -96,13 +99,13 @@ export default function Home() {
 
       const parsedSources: SearchSource[] = Array.isArray(result.sources)
         ? result.sources.map((s: SearchSource) => ({
-          id: String(s.id || ""),
-          source: String(s.source || "Unknown source"),
-          documentId: s.documentId ? String(s.documentId) : null,
-          originalFileName: s.originalFileName
-            ? String(s.originalFileName)
-            : null,
-        }))
+            id: String(s.id || ""),
+            source: String(s.source || "Unknown source"),
+            documentId: s.documentId ? String(s.documentId) : null,
+            originalFileName: s.originalFileName
+              ? String(s.originalFileName)
+              : null,
+          }))
         : [];
 
       setResult(String(result.result || ""));
@@ -189,8 +192,8 @@ export default function Home() {
                 {sources.map((source) => {
                   const canPreview = isPdfSource(source);
                   const previewSrc = source.documentId
-                    ? `http://localhost:1337/documents/${encodeURIComponent(source.documentId)}/original`
-                    : `http://localhost:1337/documents/original?source=${encodeURIComponent(source.source)}&county=${encodeURIComponent(county)}&state=${encodeURIComponent(state)}`;
+                    ? `${API_URL}/documents/${encodeURIComponent(source.documentId)}/original`
+                    : `${API_URL}/documents/original?source=${encodeURIComponent(source.source)}&county=${encodeURIComponent(county)}&state=${encodeURIComponent(state)}`;
 
                   return (
                     <div
@@ -204,7 +207,13 @@ export default function Home() {
                         {canPreview && (
                           <button
                             type="button"
-                            onClick={() => window.open(previewSrc, "_blank", "noopener,noreferrer")}
+                            onClick={() =>
+                              window.open(
+                                previewSrc,
+                                "_blank",
+                                "noopener,noreferrer",
+                              )
+                            }
                             className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600"
                           >
                             Open PDF

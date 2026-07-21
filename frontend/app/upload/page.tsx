@@ -69,9 +69,9 @@ export default function Upload() {
   const [videoStatus, setVideoStatus] = useState<string | null>(null);
   const [videoTranscript, setVideoTranscript] =
     useState<TranscriptPayload | null>(null);
-  const [videoTranscriptError, setVideoTranscriptError] = useState<string | null>(
-    null,
-  );
+  const [videoTranscriptError, setVideoTranscriptError] = useState<
+    string | null
+  >(null);
   const { showAlert } = useAlert();
 
   const validateFileTypes = (selectedFiles: File[]) => {
@@ -369,7 +369,8 @@ export default function Upload() {
             {videoUploadId && (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
                 <p>
-                  <span className="font-semibold">Video ID:</span> {videoUploadId}
+                  <span className="font-semibold">Video ID:</span>{" "}
+                  {videoUploadId}
                 </p>
                 <p className="mt-1">
                   <span className="font-semibold">Status:</span>{" "}

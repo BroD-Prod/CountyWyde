@@ -1,6 +1,6 @@
 require("dotenv").config();
 const { attachEmbeddings } = require("../lib/embeddings");
-const { readUploads, writeUploads } = require("../lib/uploadStore");
+const { readChunks, updateChunkEmbedding } = require("../lib/uploadStore");
 
 const EMBEDDING_CONCURRENCY = 4;
 
@@ -9,8 +9,8 @@ async function main() {
     throw new Error("Missing GEMINI_API_KEY");
   }
 
-  const uploads = await readUploads();
-  const pending = uploads.filter(
+  const all = readChunks();
+  const pending = all.filter(
     (item) => !Array.isArray(item.embedding) || item.embedding.length === 0,
   );
 
@@ -21,14 +21,19 @@ async function main() {
 
   await attachEmbeddings(pending, { concurrency: EMBEDDING_CONCURRENCY });
 
-  const updated = pending.filter(
-    (item) => Array.isArray(item.embedding) && item.embedding.length > 0,
-  ).length;
-  const failed = pending.length - updated;
+  let updated = 0;
+  let failed = 0;
+  for (const item of pending) {
+    if (Array.isArray(item.embedding) && item.embedding.length > 0) {
+      updateChunkEmbedding(item.id, item.embedding);
+      updated += 1;
+    } else {
+      failed += 1;
+    }
+  }
 
-  await writeUploads(uploads);
   console.log(
-    `Backfill complete. updated=${updated}, failed=${failed}, total=${uploads.length}`,
+    `Backfill complete. updated=${updated}, failed=${failed}, total=${all.length}`,
   );
 }
 

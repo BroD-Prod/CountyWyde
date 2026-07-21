@@ -29,7 +29,7 @@ export default function Account() {
   const { showAlert } = useAlert();
 
   useEffect(() => {
-    fetch("http://localhost:1337/account/session", {
+    fetch(process.env.NEXT_PUBLIC_API_URL + "/account/session", {
       method: "GET",
       credentials: "include",
     })
@@ -52,7 +52,7 @@ export default function Account() {
         setCheckingSession(false);
       });
 
-    fetch("http://localhost:1337/states")
+    fetch(process.env.NEXT_PUBLIC_API_URL + "/states")
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.states)) {
@@ -72,18 +72,21 @@ export default function Account() {
       return;
     }
 
-    const res = await fetch("http://localhost:1337/account/update", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
+    const res = await fetch(
+      process.env.NEXT_PUBLIC_API_URL + "/account/update",
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          username: user.username,
+          county,
+          state,
+        }),
       },
-      credentials: "include",
-      body: JSON.stringify({
-        username: user.username,
-        county,
-        state,
-      }),
-    });
+    );
 
     const data = await res.json();
     if (!res.ok) {
@@ -158,7 +161,7 @@ export default function Account() {
                 Save Changes
               </button>
               <a
-                href="/account/delete"
+                href={process.env.NEXT_PUBLIC_API_URL + "/account/delete"}
                 className="inline-flex flex-1 items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-semibold text-red-700 transition hover:bg-red-100"
               >
                 Delete Account
