@@ -156,6 +156,9 @@ export default function Contact() {
             </button>
           </form>
 
+          <p className="mt-4 text-sm text-slate-500">
+            Or call us at <a href="tel:+1234567890" className="text-slate-700 underline">+1 (234) 567-890</a> to discuss the needs for your county directly. 
+          </p>
           {statusMessage ? (
             <p
               className={`mt-4 text-sm ${statusType === "success" ? "text-emerald-700" : "text-red-600"

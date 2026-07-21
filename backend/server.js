@@ -80,7 +80,7 @@ const server = createServer((req, res) => {
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename",
+    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename, X-Video-Created-At",
   );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
