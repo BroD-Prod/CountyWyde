@@ -8,6 +8,12 @@ type SearchSource = {
   source: string;
   documentId?: string | null;
   originalFileName?: string | null;
+  chunkId?: string | null;
+  chunkIndex?: number | null;
+  chunkCount?: number | null;
+  citationId?: number | null;
+  score?: number | null;
+  excerpt?: string | null;
 };
 
 function isPdfSource(source: SearchSource): boolean {
@@ -102,6 +108,15 @@ export default function Home() {
           originalFileName: s.originalFileName
             ? String(s.originalFileName)
             : null,
+          chunkId: s.chunkId ? String(s.chunkId) : null,
+          chunkIndex:
+            typeof s.chunkIndex === "number" ? Number(s.chunkIndex) : null,
+          chunkCount:
+            typeof s.chunkCount === "number" ? Number(s.chunkCount) : null,
+          citationId:
+            typeof s.citationId === "number" ? Number(s.citationId) : null,
+          score: typeof s.score === "number" ? Number(s.score) : null,
+          excerpt: s.excerpt ? String(s.excerpt) : null,
         }))
         : [];
 
@@ -201,6 +216,14 @@ export default function Home() {
                         <p className="text-sm font-medium text-slate-700">
                           {source.source}
                         </p>
+                        {(typeof source.chunkIndex === "number" || typeof source.citationId === "number") && (
+                          <p className="text-xs text-slate-500">
+                            {typeof source.citationId === "number" ? `Citation ${source.citationId}` : ""}
+                            {typeof source.chunkIndex === "number"
+                              ? `${typeof source.citationId === "number" ? " • " : ""}Chunk ${source.chunkIndex + 1}${typeof source.chunkCount === "number" ? `/${source.chunkCount}` : ""}`
+                              : ""}
+                          </p>
+                        )}
                         {canPreview && (
                           <button
                             type="button"
@@ -215,6 +238,12 @@ export default function Home() {
                       {!canPreview && (
                         <p className="mt-2 text-xs text-slate-500">
                           PDF preview unavailable for this source.
+                        </p>
+                      )}
+
+                      {source.excerpt && (
+                        <p className="mt-3 line-clamp-4 text-xs text-slate-600">
+                          {source.excerpt}
                         </p>
                       )}
                     </div>
