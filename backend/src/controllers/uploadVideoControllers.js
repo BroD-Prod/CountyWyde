@@ -25,6 +25,7 @@ const EMBEDDING_CONCURRENCY = 4;
 const WHISPER_CPP_BIN = process.env.WHISPER_CPP_BIN || "whisper-cli";
 const WHISPER_MODEL_PATH = process.env.WHISPER_MODEL_PATH || "";
 const WHISPER_THREADS = Number(process.env.WHISPER_THREADS || "4");
+const MAX_CONSECUTIVE_SEGMENT_REPEATS = 2;
 const MIME_EXTENSION_MAP = {
   "video/mp4": ".mp4",
   "video/quicktime": ".mov",
@@ -32,6 +33,18 @@ const MIME_EXTENSION_MAP = {
   "video/x-matroska": ".mkv",
 };
 const VALID_VIDEO_EXTENSIONS = new Set(Object.values(MIME_EXTENSION_MAP));
+
+function assertEmbeddingsPresent(records) {
+  const missingCount = records.filter(
+    (record) => !Array.isArray(record.embedding) || record.embedding.length === 0,
+  ).length;
+
+  if (missingCount > 0) {
+    throw new Error(
+      `Embedding generation failed for ${missingCount} transcript chunk(s)`,
+    );
+  }
+}
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -264,17 +277,20 @@ function normalizeTranscript(transcript) {
     ? transcript.segments
     : Array.isArray(transcript?.transcription)
       ? transcript.transcription.map((segment, index) => ({
-          index,
-          start: Number.isFinite(Number(segment?.offsets?.from))
-            ? Number(segment.offsets.from)
-            : null,
-          end: Number.isFinite(Number(segment?.offsets?.to))
-            ? Number(segment.offsets.to)
-            : null,
-          text: String(segment?.text || "").trim(),
-        }))
+        index,
+        start: Number.isFinite(Number(segment?.offsets?.from))
+          ? Number(segment.offsets.from) / 1000
+          : null,
+        end: Number.isFinite(Number(segment?.offsets?.to))
+          ? Number(segment.offsets.to) / 1000
+          : null,
+        text: String(segment?.text || "").trim(),
+      }))
       : [];
-  const textFromSegments = segmentList
+
+  const sanitizedSegments = collapseConsecutiveDuplicateSegments(segmentList);
+
+  const textFromSegments = sanitizedSegments
     .map((segment) => String(segment?.text || "").trim())
     .filter(Boolean)
     .join(" ");
@@ -286,7 +302,7 @@ function normalizeTranscript(transcript) {
     duration: Number.isFinite(Number(transcript?.duration))
       ? Number(transcript.duration)
       : null,
-    segments: segmentList.map((segment, index) => ({
+    segments: sanitizedSegments.map((segment, index) => ({
       index,
       start: Number.isFinite(Number(segment?.start))
         ? Number(segment.start)
@@ -295,6 +311,54 @@ function normalizeTranscript(transcript) {
       text: String(segment?.text || "").trim(),
     })),
   };
+}
+
+function segmentTextKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function collapseConsecutiveDuplicateSegments(segments) {
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return [];
+  }
+
+  const collapsed = [];
+  let lastKey = "";
+  let consecutiveCount = 0;
+
+  for (const rawSegment of segments) {
+    const segment = {
+      ...rawSegment,
+      text: String(rawSegment?.text || "").trim(),
+    };
+    const key = segmentTextKey(segment.text);
+
+    if (key && key === lastKey) {
+      consecutiveCount += 1;
+      if (consecutiveCount > MAX_CONSECUTIVE_SEGMENT_REPEATS) {
+        const last = collapsed[collapsed.length - 1];
+        if (
+          last &&
+          Number.isFinite(Number(segment?.end)) &&
+          (!Number.isFinite(Number(last?.end)) || Number(segment.end) > Number(last.end))
+        ) {
+          last.end = Number(segment.end);
+        }
+        continue;
+      }
+    } else {
+      lastKey = key;
+      consecutiveCount = 1;
+    }
+
+    collapsed.push(segment);
+  }
+
+  return collapsed;
 }
 
 function buildTranscriptUploadRecords(
@@ -395,7 +459,7 @@ async function uploadVideoFile(req, res) {
       writeStream.destroy();
       req.resume();
       finalized = true;
-      fs.unlink(filePath).catch(() => {});
+      fs.unlink(filePath).catch(() => { });
       sendJson(res, 413, {
         error: `File exceeds the ${MAX_VIDEO_BYTES / (1024 * 1024)} MB limit`,
       });
@@ -488,6 +552,7 @@ async function processVideoFile(recordId) {
     await attachEmbeddings(uploadRecords, {
       concurrency: EMBEDDING_CONCURRENCY,
     });
+    assertEmbeddingsPresent(uploadRecords);
 
     // Upsert embedded chunks into Milvus; non-fatal on failure.
     try {
@@ -577,8 +642,38 @@ async function getVideoTranscript(req, res, recordId) {
   }
 }
 
+async function getVideoFile(req, res, recordId) {
+  try {
+    const record = await readVideoRecord(recordId);
+    await fs.access(record.videoPath, fsSync.constants.R_OK);
+    const downloadName = String(record.sourceName || `${record.id}${record.extension || ""}`)
+      .replace(/[\r\n"]/g, "_")
+      .trim();
+
+    res.statusCode = 200;
+    res.setHeader("Content-Type", record.contentType || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${downloadName || "video"}"`,
+    );
+
+    const readStream = fsSync.createReadStream(record.videoPath);
+    readStream.on("error", () => {
+      if (!res.headersSent) {
+        sendJson(res, 500, { error: "Failed to read video file" });
+      } else {
+        res.destroy();
+      }
+    });
+    readStream.pipe(res);
+  } catch (error) {
+    sendJson(res, 404, { error: error.message || "Video file not found" });
+  }
+}
+
 module.exports = {
   uploadVideoFile,
   getVideoStatus,
   getVideoTranscript,
+  getVideoFile,
 };

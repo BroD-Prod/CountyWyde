@@ -3,6 +3,13 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAlert } from "../../components/AlertProvider";
 
+const API_BASE_RAW =
+  process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE =
+  API_BASE_RAW && API_BASE_RAW !== "undefined" && API_BASE_RAW !== "null"
+    ? API_BASE_RAW
+    : "http://localhost:1337";
+
 type StateOption = {
   id: number;
   name: string;
@@ -20,7 +27,7 @@ export default function CreateAccount() {
   const { showAlert } = useAlert();
 
   useEffect(() => {
-    fetch("http://localhost:1337/counties")
+    fetch(`${API_BASE}/counties`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.counties)) {
@@ -31,7 +38,7 @@ export default function CreateAccount() {
         setRegisteredCounties([]);
       });
 
-    fetch("http://localhost:1337/states")
+    fetch(`${API_BASE}/states`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.states)) {
@@ -56,7 +63,7 @@ export default function CreateAccount() {
       return;
     }
 
-    const response = await fetch("http://localhost:1337/account/signup", {
+    const response = await fetch(`${API_BASE}/account/signup`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

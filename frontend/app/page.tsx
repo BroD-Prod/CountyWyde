@@ -8,6 +8,12 @@ type SearchSource = {
   source: string;
   documentId?: string | null;
   originalFileName?: string | null;
+  parsedType?: string | null;
+  videoId?: string | null;
+  timestamp?: string | null;
+  timestampSeconds?: number | null;
+  transcriptSnippet?: string | null;
+  transcriptSegments?: Array<{ start?: number | null; text?: string | null }>;
 };
 
 function isPdfSource(source: SearchSource): boolean {
@@ -15,6 +21,39 @@ function isPdfSource(source: SearchSource): boolean {
     .trim()
     .toLowerCase();
   return name.endsWith(".pdf");
+}
+
+function normalizeTimestampSeconds(value: number): number {
+  if (!Number.isFinite(value)) {
+    return value;
+  }
+
+  // Legacy transcripts can persist milliseconds; normalize for display.
+  if (value > 24 * 60 * 60) {
+    return value / 1000;
+  }
+
+  return value;
+}
+
+function formatTimestamp(seconds: number | null | undefined): string {
+  if (!Number.isFinite(Number(seconds))) {
+    return "Timestamp";
+  }
+
+  const totalSeconds = Math.max(
+    0,
+    Math.floor(normalizeTimestampSeconds(Number(seconds))),
+  );
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
@@ -99,13 +138,26 @@ export default function Home() {
 
       const parsedSources: SearchSource[] = Array.isArray(result.sources)
         ? result.sources.map((s: SearchSource) => ({
-            id: String(s.id || ""),
-            source: String(s.source || "Unknown source"),
-            documentId: s.documentId ? String(s.documentId) : null,
-            originalFileName: s.originalFileName
-              ? String(s.originalFileName)
-              : null,
-          }))
+          id: String(s.id || ""),
+          source: String(s.source || "Unknown source"),
+          documentId: s.documentId ? String(s.documentId) : null,
+          originalFileName: s.originalFileName
+            ? String(s.originalFileName)
+            : null,
+          parsedType: s.parsedType ? String(s.parsedType) : null,
+          videoId: s.videoId ? String(s.videoId) : null,
+          timestamp: s.timestamp ? String(s.timestamp) : null,
+          timestampSeconds: s.timestampSeconds ? Number(s.timestampSeconds) : null,
+          transcriptSnippet: s.transcriptSnippet
+            ? String(s.transcriptSnippet)
+            : null,
+          transcriptSegments: Array.isArray(s.transcriptSegments)
+            ? s.transcriptSegments.map((segment: { start?: number | null; text?: string | null }) => ({
+              start: segment.start != null ? Number(segment.start) : null,
+              text: segment.text ? String(segment.text) : null,
+            }))
+            : [],
+        }))
         : [];
 
       setResult(String(result.result || ""));
@@ -191,9 +243,19 @@ export default function Home() {
 
                 {sources.map((source) => {
                   const canPreview = isPdfSource(source);
+                  const canOpenVideo =
+                    source.parsedType === "whisper_transcript" &&
+                    String(source.videoId || "").trim().length > 0;
+                  const transcriptHeaderTimestamp =
+                    source.timestampSeconds != null
+                      ? formatTimestamp(source.timestampSeconds)
+                      : source.timestamp || null;
                   const previewSrc = source.documentId
                     ? `${API_URL}/documents/${encodeURIComponent(source.documentId)}/original`
                     : `${API_URL}/documents/original?source=${encodeURIComponent(source.source)}&county=${encodeURIComponent(county)}&state=${encodeURIComponent(state)}`;
+                  const downloadVideoSrc = canOpenVideo
+                    ? `${API_URL}/upload/video/${encodeURIComponent(String(source.videoId))}/original`
+                    : "";
 
                   return (
                     <div
@@ -204,6 +266,27 @@ export default function Home() {
                         <p className="text-sm font-medium text-slate-700">
                           {source.source}
                         </p>
+                        {transcriptHeaderTimestamp && source.transcriptSnippet && (
+                          <details className="group rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                            <summary className="cursor-pointer list-none">
+                              Transcript at {transcriptHeaderTimestamp}
+                            </summary>
+                            <div className="mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-normal text-slate-700">
+                              {source.transcriptSegments?.length ? (
+                                <ul className="space-y-2 text-xs text-slate-500">
+                                  {source.transcriptSegments.map((segment, index) => (
+                                    <li key={`${segment.start ?? index}-${index}`}>
+                                      <span className="font-semibold text-slate-600">
+                                        {formatTimestamp(segment.start)}
+                                      </span>{" "}
+                                      {segment.text}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                            </div>
+                          </details>
+                        )}
                         {canPreview && (
                           <button
                             type="button"
@@ -219,9 +302,24 @@ export default function Home() {
                             Open PDF
                           </button>
                         )}
+                        {canOpenVideo && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                downloadVideoSrc,
+                                "_blank",
+                                "noopener,noreferrer",
+                              )
+                            }
+                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                          >
+                            Download Video
+                          </button>
+                        )}
                       </div>
 
-                      {!canPreview && (
+                      {!canPreview && !canOpenVideo && (
                         <p className="mt-2 text-xs text-slate-500">
                           PDF preview unavailable for this source.
                         </p>

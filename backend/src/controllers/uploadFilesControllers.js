@@ -21,6 +21,18 @@ const CHUNK_OVERLAP = 200;
 const EMBEDDING_CONCURRENCY = 4;
 const DOCUMENTS_DIR = path.join(__dirname, "../../data/documents");
 
+function assertEmbeddingsPresent(records) {
+  const missingCount = records.filter(
+    (record) => !Array.isArray(record.embedding) || record.embedding.length === 0,
+  ).length;
+
+  if (missingCount > 0) {
+    throw new Error(
+      `Embedding generation failed for ${missingCount} upload chunk(s)`,
+    );
+  }
+}
+
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -279,21 +291,22 @@ async function uploadFile(req, res) {
 
       const recordsWithDocument = documentMetadata
         ? parsedRecords.map((record) => ({
-            ...record,
-            documentId: documentMetadata.documentId,
-            originalFileName: documentMetadata.originalName,
-            originalMimeType: documentMetadata.mimeType,
-            originalSize: documentMetadata.size,
-            originalStoredFilename: documentMetadata.storedFilename,
-            originalStoredPath: documentMetadata.storedPath,
-            originalStoredAt: documentMetadata.createdAt,
-          }))
+          ...record,
+          documentId: documentMetadata.documentId,
+          originalFileName: documentMetadata.originalName,
+          originalMimeType: documentMetadata.mimeType,
+          originalSize: documentMetadata.size,
+          originalStoredFilename: documentMetadata.storedFilename,
+          originalStoredPath: documentMetadata.storedPath,
+          originalStoredAt: documentMetadata.createdAt,
+        }))
         : parsedRecords;
 
       normalized = normalized.concat(recordsWithDocument);
     }
 
     await attachEmbeddings(normalized, { concurrency: EMBEDDING_CONCURRENCY });
+    assertEmbeddingsPresent(normalized);
 
     if (normalized.length === 0) {
       res.statusCode = 400;
@@ -551,7 +564,7 @@ async function deleteUpload(req, res) {
       if (ids.length > 0) {
         try {
           await deleteChunks(ids);
-        } catch {}
+        } catch { }
       }
       deleted = deleteChunksById(payload.id, county);
     } else if (payload.source) {
@@ -559,7 +572,7 @@ async function deleteUpload(req, res) {
       if (ids.length > 0) {
         try {
           await deleteChunks(ids);
-        } catch {}
+        } catch { }
       }
       deleted = deleteChunksBySource(payload.source, county);
     } else {

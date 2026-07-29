@@ -310,6 +310,129 @@ function findPdfDocumentBySource(records, sourceName) {
   );
 }
 
+function formatTranscriptTimestamp(seconds) {
+  if (!Number.isFinite(Number(seconds))) {
+    return null;
+  }
+
+  const totalSeconds = Math.max(0, Math.floor(Number(seconds)));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor(totalSeconds / 60);
+  const minuteWithinHour = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minuteWithinHour).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function normalizeSegmentStartScale(segments) {
+  const starts = segments
+    .map((segment) => Number(segment?.start))
+    .filter((start) => Number.isFinite(start));
+
+  if (starts.length === 0) {
+    return segments;
+  }
+
+  const divisibleByThousandCount = starts.filter(
+    (start) => Number.isInteger(start) && Math.abs(start) % 1000 === 0,
+  ).length;
+  const maxStart = Math.max(...starts);
+  const avgStart = starts.reduce((sum, value) => sum + value, 0) / starts.length;
+  const isLikelyMilliseconds =
+    maxStart >= 1000 &&
+    (divisibleByThousandCount / starts.length >= 0.25 ||
+      maxStart > 24 * 60 * 60 ||
+      avgStart > 2 * 60 * 60);
+
+  if (!isLikelyMilliseconds) {
+    return segments;
+  }
+
+  return segments.map((segment) => ({
+    ...segment,
+    start: Number.isFinite(Number(segment?.start))
+      ? Number(segment.start) / 1000
+      : segment.start,
+  }));
+}
+
+function buildVideoTranscriptTimestampLink(item, answerText) {
+  if (!item || String(item?.parsedType || "").toLowerCase() !== "whisper_transcript") {
+    return null;
+  }
+
+  const structuredSegments = Array.isArray(item?.structured?.segments)
+    ? item.structured.segments
+    : [];
+  const scaledSegments = normalizeSegmentStartScale(structuredSegments);
+  const normalizedSegments = scaledSegments
+    .filter(
+      (segment) =>
+        Number.isFinite(Number(segment?.start)) &&
+        String(segment?.text || "").trim(),
+    )
+    .map((segment) => ({
+      start: Number(segment.start),
+      text: String(segment.text || "").trim(),
+    }));
+
+  if (normalizedSegments.length === 0) {
+    return null;
+  }
+
+  const answerTokens = new Set(
+    tokenize(answerText).filter((token) => token.length > 2),
+  );
+
+  const scoredSegments = normalizedSegments
+    .map((segment) => {
+      const segmentTokens = tokenize(segment.text);
+      let overlap = 0;
+      for (const token of segmentTokens) {
+        if (answerTokens.has(token)) {
+          overlap += 1;
+        }
+      }
+
+      return {
+        ...segment,
+        overlap,
+      };
+    })
+    .sort((a, b) => {
+      if (b.overlap !== a.overlap) {
+        return b.overlap - a.overlap;
+      }
+      return a.start - b.start;
+    });
+
+  const topSegments = scoredSegments
+    .slice(0, 3)
+    .sort((a, b) => a.start - b.start)
+    .map((segment) => ({
+      start: segment.start,
+      text: segment.text,
+    }));
+
+  const primarySegment = scoredSegments[0] || topSegments[0];
+  const startSeconds = Number(primarySegment?.start ?? null);
+  if (!Number.isFinite(startSeconds)) {
+    return null;
+  }
+
+  const videoId = String(item?.metadata?.videoId || item?.videoId || "").trim();
+
+  return {
+    timestamp: formatTranscriptTimestamp(startSeconds),
+    timestampSeconds: Math.floor(startSeconds),
+    transcriptSnippet: primarySegment?.text || null,
+    transcriptSegments: topSegments,
+    videoId: videoId || null,
+  };
+}
+
 async function getSearch(req, res) {
   res.statusCode = 200;
   res.setHeader("Content-Type", "application/json");
@@ -409,11 +532,12 @@ async function postSearch(req, res) {
       : getSupportingSources(contextMatches, text);
 
     res.statusCode = 200;
-    const responseSources = sources.map((item) => {
+    const responseSources = sources.map((item, index) => {
       const fallback =
         item.documentId && item.originalStoredPath
           ? item
           : findPdfDocumentBySource(countyUploads, item.source);
+      const videoTimestampLink = index === 0 ? buildVideoTranscriptTimestampLink(item, text) : null;
 
       return {
         id: item.id,
@@ -424,6 +548,16 @@ async function postSearch(req, res) {
           item.originalFileName ||
           item.source ||
           null,
+        parsedType: item.parsedType || null,
+        ...(videoTimestampLink
+          ? {
+            timestamp: videoTimestampLink.timestamp,
+            timestampSeconds: videoTimestampLink.timestampSeconds,
+            transcriptSnippet: videoTimestampLink.transcriptSnippet,
+            transcriptSegments: videoTimestampLink.transcriptSegments,
+            videoId: videoTimestampLink.videoId,
+          }
+          : {}),
       };
     });
 
@@ -442,4 +576,5 @@ async function postSearch(req, res) {
 module.exports = {
   getSearch,
   postSearch,
+  buildVideoTranscriptTimestampLink,
 };

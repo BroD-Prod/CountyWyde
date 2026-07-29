@@ -3,6 +3,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAlert } from "../../components/AlertProvider";
 
+const API_BASE_RAW =
+  process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE =
+  API_BASE_RAW && API_BASE_RAW !== "undefined" && API_BASE_RAW !== "null"
+    ? API_BASE_RAW
+    : "http://localhost:1337";
+
 export default function DeleteAccount() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +24,7 @@ export default function DeleteAccount() {
       );
       return;
     }
-    fetch("http://localhost:1337/account/delete", {
+    fetch(`${API_BASE}/account/delete`, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
