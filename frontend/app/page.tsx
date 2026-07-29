@@ -8,12 +8,12 @@ type SearchSource = {
   source: string;
   documentId?: string | null;
   originalFileName?: string | null;
-  chunkId?: string | null;
-  chunkIndex?: number | null;
-  chunkCount?: number | null;
-  citationId?: number | null;
-  score?: number | null;
-  excerpt?: string | null;
+  parsedType?: string | null;
+  videoId?: string | null;
+  timestamp?: string | null;
+  timestampSeconds?: number | null;
+  transcriptSnippet?: string | null;
+  transcriptSegments?: Array<{ start?: number | null; text?: string | null }>;
 };
 
 function isPdfSource(source: SearchSource): boolean {
@@ -22,6 +22,41 @@ function isPdfSource(source: SearchSource): boolean {
     .toLowerCase();
   return name.endsWith(".pdf");
 }
+
+function normalizeTimestampSeconds(value: number): number {
+  if (!Number.isFinite(value)) {
+    return value;
+  }
+
+  // Legacy transcripts can persist milliseconds; normalize for display.
+  if (value > 24 * 60 * 60) {
+    return value / 1000;
+  }
+
+  return value;
+}
+
+function formatTimestamp(seconds: number | null | undefined): string {
+  if (!Number.isFinite(Number(seconds))) {
+    return "Timestamp";
+  }
+
+  const totalSeconds = Math.max(
+    0,
+    Math.floor(normalizeTimestampSeconds(Number(seconds))),
+  );
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
 
 export default function Home() {
   const [search, setSearch] = useState("");
@@ -43,7 +78,7 @@ export default function Home() {
       return;
     }
 
-    fetch(`http://localhost:1337/counties?state=${encodeURIComponent(state)}`)
+    fetch(`${API_URL}/counties?state=${encodeURIComponent(state)}`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.counties)) {
@@ -56,7 +91,7 @@ export default function Home() {
   }, [state]);
 
   useEffect(() => {
-    fetch("http://localhost:1337/states")
+    fetch(`${API_URL}/states`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.states)) {
@@ -86,11 +121,12 @@ export default function Home() {
 
     setIsSearching(true);
     try {
-      const response = await fetch("http://localhost:1337/search", {
+      const response = await fetch(`${API_URL}/search`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({ prompt: search, county, state }),
       });
 
@@ -108,15 +144,19 @@ export default function Home() {
           originalFileName: s.originalFileName
             ? String(s.originalFileName)
             : null,
-          chunkId: s.chunkId ? String(s.chunkId) : null,
-          chunkIndex:
-            typeof s.chunkIndex === "number" ? Number(s.chunkIndex) : null,
-          chunkCount:
-            typeof s.chunkCount === "number" ? Number(s.chunkCount) : null,
-          citationId:
-            typeof s.citationId === "number" ? Number(s.citationId) : null,
-          score: typeof s.score === "number" ? Number(s.score) : null,
-          excerpt: s.excerpt ? String(s.excerpt) : null,
+          parsedType: s.parsedType ? String(s.parsedType) : null,
+          videoId: s.videoId ? String(s.videoId) : null,
+          timestamp: s.timestamp ? String(s.timestamp) : null,
+          timestampSeconds: s.timestampSeconds ? Number(s.timestampSeconds) : null,
+          transcriptSnippet: s.transcriptSnippet
+            ? String(s.transcriptSnippet)
+            : null,
+          transcriptSegments: Array.isArray(s.transcriptSegments)
+            ? s.transcriptSegments.map((segment: { start?: number | null; text?: string | null }) => ({
+              start: segment.start != null ? Number(segment.start) : null,
+              text: segment.text ? String(segment.text) : null,
+            }))
+            : [],
         }))
         : [];
 
@@ -203,9 +243,19 @@ export default function Home() {
 
                 {sources.map((source) => {
                   const canPreview = isPdfSource(source);
+                  const canOpenVideo =
+                    source.parsedType === "whisper_transcript" &&
+                    String(source.videoId || "").trim().length > 0;
+                  const transcriptHeaderTimestamp =
+                    source.timestampSeconds != null
+                      ? formatTimestamp(source.timestampSeconds)
+                      : source.timestamp || null;
                   const previewSrc = source.documentId
-                    ? `http://localhost:1337/documents/${encodeURIComponent(source.documentId)}/original`
-                    : `http://localhost:1337/documents/original?source=${encodeURIComponent(source.source)}&county=${encodeURIComponent(county)}&state=${encodeURIComponent(state)}`;
+                    ? `${API_URL}/documents/${encodeURIComponent(source.documentId)}/original`
+                    : `${API_URL}/documents/original?source=${encodeURIComponent(source.source)}&county=${encodeURIComponent(county)}&state=${encodeURIComponent(state)}`;
+                  const downloadVideoSrc = canOpenVideo
+                    ? `${API_URL}/upload/video/${encodeURIComponent(String(source.videoId))}/original`
+                    : "";
 
                   return (
                     <div
@@ -216,26 +266,60 @@ export default function Home() {
                         <p className="text-sm font-medium text-slate-700">
                           {source.source}
                         </p>
-                        {(typeof source.chunkIndex === "number" || typeof source.citationId === "number") && (
-                          <p className="text-xs text-slate-500">
-                            {typeof source.citationId === "number" ? `Citation ${source.citationId}` : ""}
-                            {typeof source.chunkIndex === "number"
-                              ? `${typeof source.citationId === "number" ? " • " : ""}Chunk ${source.chunkIndex + 1}${typeof source.chunkCount === "number" ? `/${source.chunkCount}` : ""}`
-                              : ""}
-                          </p>
+                        {transcriptHeaderTimestamp && source.transcriptSnippet && (
+                          <details className="group rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                            <summary className="cursor-pointer list-none">
+                              Transcript at {transcriptHeaderTimestamp}
+                            </summary>
+                            <div className="mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-normal text-slate-700">
+                              {source.transcriptSegments?.length ? (
+                                <ul className="space-y-2 text-xs text-slate-500">
+                                  {source.transcriptSegments.map((segment, index) => (
+                                    <li key={`${segment.start ?? index}-${index}`}>
+                                      <span className="font-semibold text-slate-600">
+                                        {formatTimestamp(segment.start)}
+                                      </span>{" "}
+                                      {segment.text}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                            </div>
+                          </details>
                         )}
                         {canPreview && (
                           <button
                             type="button"
-                            onClick={() => window.open(previewSrc, "_blank", "noopener,noreferrer")}
+                            onClick={() =>
+                              window.open(
+                                previewSrc,
+                                "_blank",
+                                "noopener,noreferrer",
+                              )
+                            }
                             className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600"
                           >
                             Open PDF
                           </button>
                         )}
+                        {canOpenVideo && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                downloadVideoSrc,
+                                "_blank",
+                                "noopener,noreferrer",
+                              )
+                            }
+                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                          >
+                            Download Video
+                          </button>
+                        )}
                       </div>
 
-                      {!canPreview && (
+                      {!canPreview && !canOpenVideo && (
                         <p className="mt-2 text-xs text-slate-500">
                           PDF preview unavailable for this source.
                         </p>

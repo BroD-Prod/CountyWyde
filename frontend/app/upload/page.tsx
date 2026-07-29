@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useAlert } from "../components/AlertProvider";
 
-const API_BASE = process.env.API_BASE || "http://localhost:1337";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:1337";
 
 const POLL_INTERVAL_MS = 2500;
 const DOCUMENT_ALLOWED_TYPES = new Set([
@@ -60,6 +60,29 @@ async function fetchJson(url: string, init?: RequestInit) {
   return { response, result };
 }
 
+function getFriendlyUploadError(error: unknown, fallback: string): string {
+  const message = String(error || "").trim();
+  if (!message) {
+    return fallback;
+  }
+
+  const lower = message.toLowerCase();
+
+  if (lower.includes("missing gemini_api_key")) {
+    return "AI indexing is not configured. Add GEMINI_API_KEY and retry.";
+  }
+
+  if (
+    lower.includes("embedding request failed") ||
+    lower.includes("embedding generation failed") ||
+    lower.includes("fetch failed")
+  ) {
+    return "AI indexing is currently unavailable. Check API key/network and retry.";
+  }
+
+  return message;
+}
+
 export default function Upload() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploadingDocuments, setUploadingDocuments] = useState(false);
@@ -69,9 +92,9 @@ export default function Upload() {
   const [videoStatus, setVideoStatus] = useState<string | null>(null);
   const [videoTranscript, setVideoTranscript] =
     useState<TranscriptPayload | null>(null);
-  const [videoTranscriptError, setVideoTranscriptError] = useState<string | null>(
-    null,
-  );
+  const [videoTranscriptError, setVideoTranscriptError] = useState<
+    string | null
+  >(null);
   const { showAlert } = useAlert();
 
   const validateFileTypes = (selectedFiles: File[]) => {
@@ -127,7 +150,7 @@ export default function Upload() {
       });
 
       if (!response.ok) {
-        showAlert(result.error || "Upload failed", "error");
+        showAlert(getFriendlyUploadError(result.error, "Upload failed"), "error");
         return;
       }
 
@@ -149,7 +172,10 @@ export default function Upload() {
       );
 
       if (!response.ok) {
-        const errorMessage = result.error || "Could not fetch video status";
+        const errorMessage = getFriendlyUploadError(
+          result.error,
+          "Could not fetch video status",
+        );
         setVideoTranscriptError(errorMessage);
         showAlert(errorMessage, "error");
         return null;
@@ -158,7 +184,12 @@ export default function Upload() {
       const nextStatus = String(result.status || "unknown");
       setVideoStatus(nextStatus);
       if (result.error && nextStatus === "failed") {
-        setVideoTranscriptError(String(result.error));
+        const failureMessage = getFriendlyUploadError(
+          result.error,
+          "Video processing failed",
+        );
+        setVideoTranscriptError(failureMessage);
+        showAlert(failureMessage, "error");
       }
       return nextStatus;
     } catch {
@@ -174,7 +205,10 @@ export default function Upload() {
       );
 
       if (!response.ok) {
-        const errorMessage = result.error || "Could not fetch transcript";
+        const errorMessage = getFriendlyUploadError(
+          result.error,
+          "Could not fetch transcript",
+        );
         setVideoTranscriptError(errorMessage);
         if (response.status !== 409) {
           showAlert(errorMessage, "error");
@@ -217,7 +251,10 @@ export default function Upload() {
       });
 
       if (!response.ok) {
-        showAlert(result.error || "Video upload failed", "error");
+        showAlert(
+          getFriendlyUploadError(result.error, "Video upload failed"),
+          "error",
+        );
         setVideoStatus("failed");
         return;
       }
@@ -369,7 +406,8 @@ export default function Upload() {
             {videoUploadId && (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
                 <p>
-                  <span className="font-semibold">Video ID:</span> {videoUploadId}
+                  <span className="font-semibold">Video ID:</span>{" "}
+                  {videoUploadId}
                 </p>
                 <p className="mt-1">
                   <span className="font-semibold">Status:</span>{" "}

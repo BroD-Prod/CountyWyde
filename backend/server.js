@@ -32,10 +32,51 @@ const {
   uploadVideoFile,
   getVideoStatus,
   getVideoTranscript,
+  getVideoFile,
 } = require("./src/controllers/uploadVideoControllers");
 
-const hostname = "127.0.0.1";
-const port = 1337;
+const hostname = process.env.HOSTNAME;
+const port = process.env.PORT;
+// --- AI Search Rate Limiter ---
+const searchRateWindow = new Map();
+const SEARCH_RATE_LIMIT = 5; // Max 5 searches
+const SEARCH_WINDOW_MS = 60 * 1000; // Per 60 seconds (1 minute)
+
+function getClientIp(req) {
+  // Respect proxies/load balancers if you are hosting on AWS/Render/Heroku, otherwise fallback to socket IP
+  return (
+    req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
+    req.socket?.remoteAddress ||
+    "unknown"
+  );
+}
+
+function checkSearchRateLimit(req, res) {
+  const now = Date.now();
+  const ip = getClientIp(req);
+  const state = searchRateWindow.get(ip);
+
+  // If new IP or the window has expired, reset their count
+  if (!state || state.resetAt <= now) {
+    searchRateWindow.set(ip, { count: 1, resetAt: now + SEARCH_WINDOW_MS });
+    return false; // Allowed
+  }
+
+  state.count += 1;
+  if (state.count > SEARCH_RATE_LIMIT) {
+    res.statusCode = 429;
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Retry-After", Math.ceil((state.resetAt - now) / 1000));
+    res.end(
+      JSON.stringify({
+        error: "Too many search requests. Please wait a minute and try again.",
+      }),
+    );
+    return true; // Blocked
+  }
+
+  return false; // Allowed
+}
 
 const server = createServer((req, res) => {
   const requestContext = security.beginRequest(req);
@@ -48,8 +89,9 @@ const server = createServer((req, res) => {
     return originalEnd.apply(this, args);
   };
 
+  const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:3000";
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Access-Control-Allow-Origin", "http://localhost:3000");
+  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader(
     "Access-Control-Allow-Methods",
@@ -63,6 +105,12 @@ const server = createServer((req, res) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Cache-Control", "no-store");
+
+  if (req.method === "OPTIONS") {
+    res.statusCode = 200;
+    res.end();
+    return;
+  }
 
   const blockInfo = security.isBlocked(req);
   if (blockInfo) {
@@ -89,12 +137,6 @@ const server = createServer((req, res) => {
 
   const path = req.url.split("?")[0];
 
-  if (req.method === "OPTIONS") {
-    res.statusCode = 200;
-    res.end();
-    return;
-  }
-
   try {
     if (path === "/search" && req.method === "GET") {
       getSearch(req, res);
@@ -102,6 +144,9 @@ const server = createServer((req, res) => {
     }
 
     if (path === "/search" && req.method === "POST") {
+      if (checkSearchRateLimit(req, res)) {
+        return;
+      }
       postSearch(req, res);
       return;
     }
@@ -137,6 +182,12 @@ const server = createServer((req, res) => {
     );
     if (videoTranscriptMatch && req.method === "GET") {
       getVideoTranscript(req, res, decodeURIComponent(videoTranscriptMatch[1]));
+      return;
+    }
+
+    const videoFileMatch = path.match(/^\/upload\/video\/([^/]+)\/original$/);
+    if (videoFileMatch && req.method === "GET") {
+      getVideoFile(req, res, decodeURIComponent(videoFileMatch[1]));
       return;
     }
 

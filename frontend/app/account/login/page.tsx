@@ -3,6 +3,13 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAlert } from "../../components/AlertProvider";
 
+const API_BASE_RAW =
+  process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE =
+  API_BASE_RAW && API_BASE_RAW !== "undefined" && API_BASE_RAW !== "null"
+    ? API_BASE_RAW
+    : "http://localhost:1337";
+
 export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -11,7 +18,7 @@ export default function Login() {
   const { showAlert } = useAlert();
 
   useEffect(() => {
-    fetch("http://localhost:1337/account/session", {
+    fetch(`${API_BASE}/account/session`, {
       method: "GET",
       credentials: "include",
     })
@@ -37,7 +44,7 @@ export default function Login() {
     }
 
     try {
-      const res = await fetch("http://localhost:1337/account/login", {
+      const res = await fetch(`${API_BASE}/account/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

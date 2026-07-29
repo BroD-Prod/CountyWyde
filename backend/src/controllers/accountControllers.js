@@ -22,6 +22,18 @@ const DELETE_RATE_LIMIT = 10;
 const UPDATE_RATE_LIMIT = 30;
 const rateWindow = new Map();
 
+function isAdminRequest(req) {
+  if (!ADMIN_KEY) return false;
+  const providedKey = req.headers["x-admin-key"] || "";
+
+  if (providedKey.length !== ADMIN_KEY.length) return false;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(providedKey),
+    Buffer.from(ADMIN_KEY),
+  );
+}
+
 function getClientIp(req) {
   return req.socket?.remoteAddress || "unknown";
 }
@@ -47,6 +59,16 @@ function checkRateLimit(req, bucket, limit, res) {
   }
 
   return false;
+}
+
+function checkPasswordAndUsernameLength(username, password) {
+  if (username.length < 8 || username.length > 50) {
+    return "Username must be between 8 and 50 characters";
+  }
+  if (password.length < 8 || password.length > 64) {
+    return "Password must be between 8 and 64 characters";
+  }
+  return null;
 }
 
 function buildSessionCookie(token) {
@@ -87,12 +109,13 @@ async function createAccount(req, res) {
     const selectedCounty = normalizeCounty(county);
     const selectedState = resolveState(state);
 
-    if (!username || !password || !selectedCounty || !state) {
+    const validationError = checkPasswordAndUsernameLength(username, password);
+    if (validationError) {
       res.statusCode = 400;
       res.setHeader("Content-Type", "application/json");
       res.end(
         JSON.stringify({
-          error: "Username, password, county, and state are required",
+          error: validationError,
         }),
       );
       return;

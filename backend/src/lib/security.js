@@ -9,6 +9,7 @@ const SCORE_BLOCK_THRESHOLD = 10;
 const SCORE_WINDOW_MS = 10 * 60 * 1000;
 
 const ROUTE_LIMITS = {
+  "GET:/account/session": 600,
   "POST:/account/login": 20,
   "POST:/account/signup": 20,
   "DELETE:/account/delete": 30,
@@ -75,14 +76,20 @@ async function appendJsonLine(filePath, payload) {
   try {
     await fs.mkdir(LOG_DIR, { recursive: true });
     await fs.appendFile(filePath, `${JSON.stringify(payload)}\n`, "utf8");
-  } catch {}
+  } catch { }
 }
 
 function getClientIp(req) {
-  const forwarded = String(req.headers["x-forwarded-for"] || "")
-    .split(",")[0]
-    .trim();
-  return forwarded || req.socket?.remoteAddress || "unknown";
+  return req.socket?.remoteAddress || "unknown";
+}
+
+function isLocalDevRequest(req) {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
+  const ip = getClientIp(req);
+  return ip === "::1" || ip === "127.0.0.1" || ip === "::ffff:127.0.0.1";
 }
 
 function getPath(req) {
@@ -140,6 +147,10 @@ function getBlockInfo(ip) {
 }
 
 function isBlocked(req) {
+  if (isLocalDevRequest(req)) {
+    return null;
+  }
+
   const ip = getClientIp(req);
   return getBlockInfo(ip);
 }
@@ -165,6 +176,10 @@ function blockIp(ip, reason) {
 }
 
 function checkRateLimit(req) {
+  if (isLocalDevRequest(req)) {
+    return { allowed: true };
+  }
+
   if (req.method === "OPTIONS") {
     return { allowed: true };
   }
@@ -239,6 +254,10 @@ function checkRateLimit(req) {
 }
 
 function addSuspicion(req, delta, reason) {
+  if (isLocalDevRequest(req)) {
+    return;
+  }
+
   if (delta <= 0) {
     return;
   }
@@ -293,7 +312,7 @@ function inspectResponseForSuspicion(req, statusCode) {
     addSuspicion(req, 4, "payload_too_large");
   }
 
-  if (statusCode === 429) {
+  if (statusCode === 429 && path !== "/account/session") {
     addSuspicion(req, 3, "rate_limited_repeatedly");
   }
 
