@@ -324,6 +324,12 @@ export default function Home() {
                           PDF preview unavailable for this source.
                         </p>
                       )}
+
+                      {source.excerpt && (
+                        <p className="mt-3 line-clamp-4 text-xs text-slate-600">
+                          {source.excerpt}
+                        </p>
+                      )}
                     </div>
                   );
                 })}
