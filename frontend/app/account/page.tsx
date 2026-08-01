@@ -19,6 +19,13 @@ type StateOption = {
   abbreviation: string;
 };
 
+const API_BASE_RAW =
+  process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE =
+  API_BASE_RAW && API_BASE_RAW !== "undefined" && API_BASE_RAW !== "null"
+    ? API_BASE_RAW
+    : "http://localhost:1337";
+
 export default function Account() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -29,7 +36,7 @@ export default function Account() {
   const { showAlert } = useAlert();
 
   useEffect(() => {
-    fetch(process.env.NEXT_PUBLIC_API_URL + "/account/session", {
+    fetch(`${API_BASE}/account/session`, {
       method: "GET",
       credentials: "include",
     })
@@ -52,7 +59,7 @@ export default function Account() {
         setCheckingSession(false);
       });
 
-    fetch(process.env.NEXT_PUBLIC_API_URL + "/states")
+    fetch(`${API_BASE}/states`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data.states)) {
@@ -73,7 +80,7 @@ export default function Account() {
     }
 
     const res = await fetch(
-      process.env.NEXT_PUBLIC_API_URL + "/account/update",
+      `${API_BASE}/account/update`,
       {
         method: "PATCH",
         headers: {
@@ -97,10 +104,10 @@ export default function Account() {
     setUser((prev) =>
       prev
         ? {
-            ...prev,
-            county,
-            state: data.state,
-          }
+          ...prev,
+          county,
+          state: data.state,
+        }
         : prev,
     );
     showAlert("Account updated successfully", "success");
@@ -161,7 +168,7 @@ export default function Account() {
                 Save Changes
               </button>
               <a
-                href={process.env.NEXT_PUBLIC_API_URL + "/account/delete"}
+                href={`${API_BASE}/account/delete`}
                 className="inline-flex flex-1 items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-semibold text-red-700 transition hover:bg-red-100"
               >
                 Delete Account

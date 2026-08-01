@@ -8,6 +8,13 @@ type SearchSource = {
   source: string;
   documentId?: string | null;
   originalFileName?: string | null;
+  parsedType?: string | null;
+  videoId?: string | null;
+  timestamp?: string | null;
+  timestampSeconds?: number | null;
+  transcriptSnippet?: string | null;
+  transcriptSegments?: Array<{ start?: number | null; text?: string | null }>;
+  excerpt?: string | null;
 };
 
 function isPdfSource(source: SearchSource): boolean {
@@ -15,6 +22,54 @@ function isPdfSource(source: SearchSource): boolean {
     .trim()
     .toLowerCase();
   return name.endsWith(".pdf");
+}
+
+function isVideoSource(source: SearchSource): boolean {
+  const name = String(source.originalFileName || source.source || "")
+    .trim()
+    .toLowerCase();
+  return (
+    source.parsedType === "whisper_transcript" ||
+    Boolean(source.videoId) ||
+    /\.(mp4|mov|avi|mkv|webm)$/i.test(name)
+  );
+}
+
+function normalizeTimestampSeconds(value: number): number {
+  if (!Number.isFinite(value)) {
+    return value;
+  }
+
+  // Legacy transcripts can persist milliseconds; normalize for display.
+  if (value > 24 * 60 * 60) {
+    return value / 1000;
+  }
+
+  return value;
+}
+
+function formatTimestamp(seconds: number | null | undefined): string {
+  if (!Number.isFinite(Number(seconds))) {
+    return "Timestamp";
+  }
+
+  const totalSeconds = Math.max(
+    0,
+    Math.floor(normalizeTimestampSeconds(Number(seconds))),
+  );
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(
+      minutes,
+    ).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(
+    remainingSeconds,
+  ).padStart(2, "0")}`;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
@@ -91,25 +146,91 @@ export default function Home() {
         body: JSON.stringify({ prompt: search, county, state }),
       });
 
-      const result = await response.json();
+      const resultData = await response.json();
       if (!response.ok) {
-        showAlert(result.error || "Search failed", "error");
+        showAlert(resultData.error || "Search failed", "error");
         return;
       }
 
-      const parsedSources: SearchSource[] = Array.isArray(result.sources)
-        ? result.sources.map((s: SearchSource) => ({
+      const rawSources: SearchSource[] = Array.isArray(resultData.sources)
+        ? resultData.sources.map((s: SearchSource) => ({
             id: String(s.id || ""),
             source: String(s.source || "Unknown source"),
             documentId: s.documentId ? String(s.documentId) : null,
             originalFileName: s.originalFileName
               ? String(s.originalFileName)
               : null,
+            parsedType: s.parsedType ? String(s.parsedType) : null,
+            videoId: s.videoId ? String(s.videoId) : null,
+            timestamp: s.timestamp ? String(s.timestamp) : null,
+            timestampSeconds:
+              s.timestampSeconds != null ? Number(s.timestampSeconds) : null,
+            transcriptSnippet: s.transcriptSnippet
+              ? String(s.transcriptSnippet)
+              : null,
+            transcriptSegments: Array.isArray(s.transcriptSegments)
+              ? s.transcriptSegments.map(
+                  (segment: {
+                    start?: number | null;
+                    text?: string | null;
+                  }) => ({
+                    start: segment.start != null ? Number(segment.start) : null,
+                    text: segment.text ? String(segment.text) : null,
+                  }),
+                )
+              : [],
+            excerpt: s.excerpt ? String(s.excerpt) : null,
           }))
         : [];
 
-      setResult(String(result.result || ""));
-      setSources(parsedSources);
+      // Group and merge sources strictly by source filename
+      const uniqueSourcesMap = new Map<string, SearchSource>();
+
+      for (const item of rawSources) {
+        const key = item.source.trim().toLowerCase();
+
+        if (!uniqueSourcesMap.has(key)) {
+          uniqueSourcesMap.set(key, { ...item });
+        } else {
+          const existing = uniqueSourcesMap.get(key)!;
+
+          // Merge fields from secondary records into the primary record
+          if (!existing.videoId && item.videoId) {
+            existing.videoId = item.videoId;
+          }
+          if (!existing.documentId && item.documentId) {
+            existing.documentId = item.documentId;
+          }
+          if (!existing.parsedType && item.parsedType) {
+            existing.parsedType = item.parsedType;
+          }
+          if (
+            existing.timestampSeconds == null &&
+            item.timestampSeconds != null
+          ) {
+            existing.timestampSeconds = item.timestampSeconds;
+          }
+          if (!existing.timestamp && item.timestamp) {
+            existing.timestamp = item.timestamp;
+          }
+          if (!existing.transcriptSnippet && item.transcriptSnippet) {
+            existing.transcriptSnippet = item.transcriptSnippet;
+          }
+          if (
+            (!existing.transcriptSegments ||
+              existing.transcriptSegments.length === 0) &&
+            item.transcriptSegments?.length
+          ) {
+            existing.transcriptSegments = item.transcriptSegments;
+          }
+          if (!existing.excerpt && item.excerpt) {
+            existing.excerpt = item.excerpt;
+          }
+        }
+      }
+
+      setResult(String(resultData.result || ""));
+      setSources(Array.from(uniqueSourcesMap.values()));
     } catch {
       showAlert("Search failed", "error");
     } finally {
@@ -190,10 +311,31 @@ export default function Home() {
                 {sources.length === 0 && <p>none</p>}
 
                 {sources.map((source) => {
-                  const canPreview = isPdfSource(source);
+                  const canPreviewPdf = isPdfSource(source);
+                  const isVideo = isVideoSource(source);
+                  const canOpenVideo =
+                    Boolean(source.videoId) && source.videoId !== "";
+
+                  const transcriptHeaderTimestamp =
+                    source.timestampSeconds != null
+                      ? formatTimestamp(source.timestampSeconds)
+                      : source.timestamp || null;
+
                   const previewSrc = source.documentId
-                    ? `${API_URL}/documents/${encodeURIComponent(source.documentId)}/original`
-                    : `${API_URL}/documents/original?source=${encodeURIComponent(source.source)}&county=${encodeURIComponent(county)}&state=${encodeURIComponent(state)}`;
+                    ? `${API_URL}/documents/${encodeURIComponent(
+                        source.documentId,
+                      )}/original`
+                    : `${API_URL}/documents/original?source=${encodeURIComponent(
+                        source.source,
+                      )}&county=${encodeURIComponent(
+                        county,
+                      )}&state=${encodeURIComponent(state)}`;
+
+                  const downloadVideoSrc = canOpenVideo
+                    ? `${API_URL}/upload/video/${encodeURIComponent(
+                        String(source.videoId),
+                      )}/original`
+                    : "";
 
                   return (
                     <div
@@ -204,7 +346,34 @@ export default function Home() {
                         <p className="text-sm font-medium text-slate-700">
                           {source.source}
                         </p>
-                        {canPreview && (
+                        {transcriptHeaderTimestamp && (
+                          <details className="group rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                            <summary className="cursor-pointer list-none">
+                              Transcript at {transcriptHeaderTimestamp}
+                            </summary>
+                            <div className="mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-normal text-slate-700">
+                              {source.transcriptSegments?.length ? (
+                                <ul className="space-y-2 text-xs text-slate-500">
+                                  {source.transcriptSegments.map(
+                                    (segment, index) => (
+                                      <li
+                                        key={`${
+                                          segment.start ?? index
+                                        }-${index}`}
+                                      >
+                                        <span className="font-semibold text-slate-600">
+                                          {formatTimestamp(segment.start)}
+                                        </span>{" "}
+                                        {segment.text}
+                                      </li>
+                                    ),
+                                  )}
+                                </ul>
+                              ) : null}
+                            </div>
+                          </details>
+                        )}
+                        {canPreviewPdf && (
                           <button
                             type="button"
                             onClick={() =>
@@ -219,11 +388,32 @@ export default function Home() {
                             Open PDF
                           </button>
                         )}
+                        {canOpenVideo && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              window.open(
+                                downloadVideoSrc,
+                                "_blank",
+                                "noopener,noreferrer",
+                              )
+                            }
+                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                          >
+                            Download Video
+                          </button>
+                        )}
                       </div>
 
-                      {!canPreview && (
+                      {!canPreviewPdf && !isVideo && (
                         <p className="mt-2 text-xs text-slate-500">
-                          PDF preview unavailable for this source.
+                          Preview unavailable for this source.
+                        </p>
+                      )}
+
+                      {source.excerpt && (
+                        <p className="mt-3 line-clamp-4 text-xs text-slate-600">
+                          {source.excerpt}
                         </p>
                       )}
                     </div>

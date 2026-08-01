@@ -9,6 +9,7 @@ const {
   getClient,
   ensureCollection,
   COLLECTION_NAME,
+  isMilvusEnabled,
 } = require("./milvusClient");
 
 const DEFAULT_TOP_K = 10;
@@ -31,8 +32,19 @@ async function upsertChunk({ chunkId, county, state, source, embedding }) {
     return;
   }
 
-  await ensureCollection();
+  if (!isMilvusEnabled()) {
+    return;
+  }
+
+  const ready = await ensureCollection();
+  if (!ready) {
+    return;
+  }
+
   const milvus = getClient();
+  if (!milvus) {
+    return;
+  }
 
   // Milvus upsert will insert-or-replace based on primary key (chunk_id)
   await milvus.upsert({
@@ -57,6 +69,10 @@ async function upsertChunk({ chunkId, county, state, source, embedding }) {
  * @returns {Promise<{ inserted: number, skipped: number }>}
  */
 async function upsertChunks(chunks, batchSize = 200) {
+  if (!isMilvusEnabled()) {
+    return { inserted: 0, skipped: chunks.length };
+  }
+
   const valid = chunks.filter(
     (c) => Array.isArray(c.embedding) && c.embedding.length > 0,
   );
@@ -64,8 +80,15 @@ async function upsertChunks(chunks, batchSize = 200) {
     return { inserted: 0, skipped: chunks.length };
   }
 
-  await ensureCollection();
+  const ready = await ensureCollection();
+  if (!ready) {
+    return { inserted: 0, skipped: chunks.length };
+  }
+
   const milvus = getClient();
+  if (!milvus) {
+    return { inserted: 0, skipped: chunks.length };
+  }
 
   let inserted = 0;
 
@@ -98,12 +121,23 @@ async function searchByVector(
   { county, state },
   topK = DEFAULT_TOP_K,
 ) {
+  if (!isMilvusEnabled()) {
+    return [];
+  }
+
   if (!Array.isArray(queryEmbedding) || queryEmbedding.length === 0) {
     return [];
   }
 
-  await ensureCollection();
+  const ready = await ensureCollection();
+  if (!ready) {
+    return [];
+  }
+
   const milvus = getClient();
+  if (!milvus) {
+    return [];
+  }
 
   const normalizedCounty = String(county || "").toLowerCase();
   const normalizedState = String(state || "").toUpperCase();
@@ -150,8 +184,19 @@ async function deleteChunks(chunkIds) {
     return;
   }
 
-  await ensureCollection();
+  if (!isMilvusEnabled()) {
+    return;
+  }
+
+  const ready = await ensureCollection();
+  if (!ready) {
+    return;
+  }
+
   const milvus = getClient();
+  if (!milvus) {
+    return;
+  }
 
   const ids = chunkIds.map((id) => `"${String(id).replace(/"/g, '\\"')}"`);
   const normalizedCounty = String(county || "").toLowerCase();

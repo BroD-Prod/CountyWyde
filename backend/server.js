@@ -32,6 +32,7 @@ const {
   uploadVideoFile,
   getVideoStatus,
   getVideoTranscript,
+  getVideoFile,
 } = require("./src/controllers/uploadVideoControllers");
 
 const hostname = process.env.HOSTNAME;
@@ -105,6 +106,12 @@ const server = createServer(async (req, res) => {
   res.setHeader("Referrer-Policy", "no-referrer");
   res.setHeader("Cache-Control", "no-store");
 
+  if (req.method === "OPTIONS") {
+    res.statusCode = 200;
+    res.end();
+    return;
+  }
+
   const blockInfo = await security.isBlocked(req);
   if (blockInfo) {
     res.statusCode = 403;
@@ -129,12 +136,6 @@ const server = createServer(async (req, res) => {
   }
 
   const path = req.url.split("?")[0];
-
-  if (req.method === "OPTIONS") {
-    res.statusCode = 200;
-    res.end();
-    return;
-  }
 
   try {
     if (path === "/search" && req.method === "GET") {
@@ -181,6 +182,12 @@ const server = createServer(async (req, res) => {
     );
     if (videoTranscriptMatch && req.method === "GET") {
       await getVideoTranscript(req, res, decodeURIComponent(videoTranscriptMatch[1]));
+      return;
+    }
+
+    const videoFileMatch = path.match(/^\/upload\/video\/([^/]+)\/original$/);
+    if (videoFileMatch && req.method === "GET") {
+      getVideoFile(req, res, decodeURIComponent(videoFileMatch[1]));
       return;
     }
 

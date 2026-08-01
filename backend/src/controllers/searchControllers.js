@@ -12,6 +12,10 @@ const RRF_K = 60;
 const MAX_LEXICAL = 10;
 const MAX_VECTOR = 10;
 const MIN_CONFIDENCE_SCORE = 1 / (RRF_K + MAX_LEXICAL + 1);
+const VECTOR_RRF_WEIGHT = 1.2;
+const LEXICAL_RRF_WEIGHT = 0.45;
+const MAX_EVIDENCE_CHUNKS = 8;
+const MAX_EVIDENCE_PER_SOURCE = 3;
 
 function tokenize(text) {
   return (text || "")
@@ -30,80 +34,13 @@ function tokenize(text) {
     .filter(Boolean);
 }
 
-function getSupportingSources(matches, answerText, fallback = 1) {
-  const answer = String(answerText || "").trim();
-  if (!answer) {
-    return matches.slice(0, fallback);
-  }
-
-  const answerTokens = Array.from(
-    new Set(tokenize(answer).filter((token) => token.length > 2)),
-  );
-
-  if (answerTokens.length === 0) {
-    return matches.slice(0, fallback);
-  }
-
-  const tokenDocumentFrequency = new Map();
-
-  for (const record of matches) {
-    const tokenSet = new Set(tokenize(String(record.text || "")));
-    for (const token of answerTokens) {
-      if (tokenSet.has(token)) {
-        tokenDocumentFrequency.set(
-          token,
-          (tokenDocumentFrequency.get(token) || 0) + 1,
-        );
-      }
-    }
-  }
-
-  const totalDocs = Math.max(matches.length, 1);
-  const scored = matches
-    .map((record) => {
-      const tokenSet = new Set(tokenize(String(record.text || "")));
-      let weightedOverlap = 0;
-      let overlapCount = 0;
-
-      for (const token of answerTokens) {
-        if (!tokenSet.has(token)) {
-          continue;
-        }
-
-        overlapCount += 1;
-        const df = tokenDocumentFrequency.get(token) || 0;
-        const idf = Math.log((totalDocs + 1) / (df + 1)) + 1;
-        weightedOverlap += idf;
-      }
-
-      return {
-        record,
-        weightedOverlap,
-        overlapCount,
-      };
-    })
-    .filter((item) => item.overlapCount > 0)
-    .sort((a, b) => {
-      if (b.weightedOverlap !== a.weightedOverlap) {
-        return b.weightedOverlap - a.weightedOverlap;
-      }
-      return b.overlapCount - a.overlapCount;
-    });
-
-  if (scored.length === 0) {
-    return matches.slice(0, fallback);
-  }
-
-  return [scored[0].record];
-}
-
 function rankByOverlap(records, prompt, max = 5) {
   const promptTokens = new Set(tokenize(prompt));
 
   return records
     .map((record) => {
       const recordTokens = tokenize(
-        `${record.source || ""} ${record.text || ""}`,
+        `${record.source || ""} ${record.text || ""}`
       );
       let score = 0;
 
@@ -139,35 +76,68 @@ function rankByVector(records, queryEmbedding, max = 5) {
     .slice(0, max);
 }
 
-function fuseWithRrf(lexicalMatches, vectorMatches, max = 5) {
+function rerankMatches(vectorMatches, lexicalMatches, prompt, max = 5) {
+  const promptTokens = tokenize(prompt).filter((token) => token.length > 2);
   const scores = new Map();
 
-  lexicalMatches.forEach((entry, index) => {
+  const upsert = (entry, kind, rankIndex) => {
     const record = entry.record;
-    const current = scores.get(record.id) || { record, score: 0 };
-    current.score += 1 / (RRF_K + index + 1);
-    scores.set(record.id, current);
-  });
+    const current = scores.get(record.id) || {
+      record,
+      score: 0,
+      vectorScore: 0,
+      lexicalScore: 0,
+      promptCoverage: 0,
+    };
 
-  vectorMatches.forEach((entry, index) => {
-    const record = entry.record;
-    const current = scores.get(record.id) || { record, score: 0 };
-    current.score += 1 / (RRF_K + index + 1);
+    if (kind === "vector") {
+      current.vectorScore = Math.max(current.vectorScore, entry.score || 0);
+      current.score += Math.max(entry.score || 0, 0) * VECTOR_RRF_WEIGHT;
+      current.score += 1 / (RRF_K + rankIndex + 1);
+    } else {
+      current.lexicalScore = Math.max(current.lexicalScore, entry.score || 0);
+      current.score += Math.max(entry.score || 0, 0) * LEXICAL_RRF_WEIGHT;
+      current.score += (1 / (RRF_K + rankIndex + 1)) * 0.5;
+    }
+
     scores.set(record.id, current);
-  });
+  };
+
+  vectorMatches.forEach((entry, index) => upsert(entry, "vector", index));
+  lexicalMatches.forEach((entry, index) => upsert(entry, "lexical", index));
+
+  for (const item of scores.values()) {
+    const recordTokens = new Set(
+      tokenize(`${item.record.source || ""} ${item.record.text || ""}`)
+    );
+    let overlap = 0;
+
+    for (const token of promptTokens) {
+      if (recordTokens.has(token)) {
+        overlap += 1;
+      }
+    }
+
+    item.promptCoverage = overlap;
+    if (promptTokens.length > 0) {
+      item.score += (overlap / promptTokens.length) * 0.75;
+    }
+  }
 
   return Array.from(scores.values())
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      if (b.promptCoverage !== a.promptCoverage) {
+        return b.promptCoverage - a.promptCoverage;
+      }
+      return (b.vectorScore || 0) - (a.vectorScore || 0);
+    })
     .slice(0, max);
 }
 
-async function rankVectorWithMilvus(
-  records,
-  queryEmbedding,
-  county,
-  state,
-  max,
-) {
+async function rankVectorWithMilvus(records, queryEmbedding, county, state, max) {
   try {
     const hits = await milvusSearch(queryEmbedding, { county, state }, max);
     const recordMap = new Map(records.map((r) => [String(r.id), r]));
@@ -175,124 +145,118 @@ async function rankVectorWithMilvus(
       .map((hit) => ({ record: recordMap.get(hit.chunkId), score: hit.score }))
       .filter((item) => item.record !== undefined);
   } catch {
-    // Graceful degradation: fall back to brute-force cosine similarity
     return rankByVector(records, queryEmbedding, max);
   }
 }
 
 async function rankHybrid(records, prompt, max = 5, { county, state } = {}) {
-  const lexicalMatches = rankByOverlap(records, prompt, MAX_LEXICAL);
+  const lexicalMatches = rankByOverlap(records, prompt, MAX_LEXICAL * 2);
 
+  let queryEmbedding = null;
   let vectorMatches = [];
   try {
-    const queryEmbedding = await embedPrompt(prompt);
+    queryEmbedding = await embedPrompt(prompt);
     if (county && state) {
       vectorMatches = await rankVectorWithMilvus(
         records,
         queryEmbedding,
         county,
         state,
-        MAX_VECTOR,
+        MAX_VECTOR * 2
       );
     } else {
-      vectorMatches = rankByVector(records, queryEmbedding, MAX_VECTOR);
+      vectorMatches = rankByVector(records, queryEmbedding, MAX_VECTOR * 2);
     }
   } catch {
-    vectorMatches = [];
+    queryEmbedding = null;
   }
 
-  if (vectorMatches.length === 0) {
+  if (!queryEmbedding) {
     return lexicalMatches.slice(0, max).map((entry, index) => ({
       record: entry.record,
       score: 1 / (RRF_K + index + 1),
+      vectorScore: 0,
+      lexicalScore: entry.score,
+      promptCoverage: entry.score,
     }));
   }
 
-  return fuseWithRrf(lexicalMatches, vectorMatches, max);
+  const reranked = rerankMatches(vectorMatches, lexicalMatches, prompt, max);
+
+  if (reranked.length > 0) {
+    return reranked;
+  }
+
+  return lexicalMatches.slice(0, max).map((entry, index) => ({
+    record: entry.record,
+    score: 1 / (RRF_K + index + 1),
+    vectorScore: 0,
+    lexicalScore: entry.score,
+    promptCoverage: entry.score,
+  }));
 }
 
-function extractRelevantLines(matches, prompt, maxLines = 8) {
-  const promptTokens = tokenize(prompt).filter((token) => token.length > 2);
-  if (promptTokens.length === 0) {
-    return "";
-  }
-  const scored = [];
-
-  for (const match of matches) {
-    const lines = String(match.text || "")
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
-      const lineTokenSet = new Set(tokenize(line));
-      let score = 0;
-
-      for (const token of promptTokens) {
-        if (lineTokenSet.has(token)) {
-          score += 1;
-        }
-      }
-
-      if (score > 0) {
-        scored.push({ line, score, index: i, lines });
-      }
-    }
-  }
-
-  if (scored.length === 0) {
-    return "";
-  }
-
-  scored.sort((a, b) => b.score - a.score);
-
+function selectTopChunksPerSource(
+  matches,
+  maxPerSource = MAX_EVIDENCE_PER_SOURCE,
+  maxTotal = MAX_EVIDENCE_CHUNKS
+) {
   const selected = [];
-  const seen = new Set();
-
-  for (const item of scored) {
-    if (selected.length >= maxLines) {
-      break;
-    }
-
-    const candidates = [item.index - 1, item.index, item.index + 1]
-      .filter((idx) => idx >= 0 && idx < item.lines.length)
-      .map((idx) => item.lines[idx]);
-
-    for (const candidate of candidates) {
-      if (!seen.has(candidate) && selected.length < maxLines) {
-        seen.add(candidate);
-        selected.push(candidate);
-      }
-    }
-  }
-
-  return selected.join("\n");
-}
-
-function dedupeMatchesBySource(matches) {
-  const seenSources = new Set();
-  const deduped = [];
+  const countsBySource = new Map();
 
   for (const match of matches) {
-    const sourceKey = String(match?.source || "")
-      .trim()
-      .toLowerCase();
-    if (!sourceKey || seenSources.has(sourceKey)) {
+    const record = match.record || match;
+    const sourceKey = String(record?.source || "").trim().toLowerCase();
+    if (!sourceKey) {
       continue;
     }
 
-    seenSources.add(sourceKey);
-    deduped.push(match);
+    const currentCount = countsBySource.get(sourceKey) || 0;
+    if (currentCount >= maxPerSource) {
+      continue;
+    }
+
+    countsBySource.set(sourceKey, currentCount + 1);
+    selected.push(match);
+
+    if (selected.length >= maxTotal) {
+      break;
+    }
   }
 
-  return deduped;
+  return selected;
+}
+
+function buildEvidenceItems(matches) {
+  return matches.map((match, index) => {
+    const record = match.record || match;
+    const chunkIndex = Number.isFinite(Number(record.chunkIndex))
+      ? Number(record.chunkIndex)
+      : null;
+    const chunkCount = Number.isFinite(Number(record.chunkCount))
+      ? Number(record.chunkCount)
+      : null;
+
+    return {
+      citationId: index + 1,
+      score: Number(match.score || 0),
+      source: String(record.source || "Unknown source"),
+      chunkId: String(record.id || ""),
+      documentId: String(record.documentId || "") || null,
+      originalFileName:
+        String(record.originalFileName || record.source || "") || null,
+      parsedType: record.parsedType || null,
+      videoId: record.videoId || null,
+      chunkIndex,
+      chunkCount,
+      text: String(record.text || ""),
+      record,
+    };
+  });
 }
 
 function findPdfDocumentBySource(records, sourceName) {
-  const normalizedSource = String(sourceName || "")
-    .trim()
-    .toLowerCase();
+  const normalizedSource = String(sourceName || "").trim().toLowerCase();
   if (!normalizedSource) {
     return null;
   }
@@ -301,20 +265,141 @@ function findPdfDocumentBySource(records, sourceName) {
     records.find(
       (item) =>
         item?.parsedType === "pdf" &&
-        String(item?.source || "")
-          .trim()
-          .toLowerCase() === normalizedSource &&
+        String(item?.source || "").trim().toLowerCase() === normalizedSource &&
         String(item?.documentId || "").trim() &&
-        typeof item?.originalStoredPath === "string",
+        typeof item?.originalStoredPath === "string"
     ) || null
   );
+}
+
+function formatTranscriptTimestamp(seconds) {
+  if (!Number.isFinite(Number(seconds))) {
+    return null;
+  }
+
+  const totalSeconds = Math.max(0, Math.floor(Number(seconds)));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor(totalSeconds / 60);
+  const minuteWithinHour = Math.floor((totalSeconds % 3600) / 60);
+  const remainingSeconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minuteWithinHour).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function normalizeSegmentStartScale(segments) {
+  const starts = segments
+    .map((segment) => Number(segment?.start))
+    .filter((start) => Number.isFinite(start));
+
+  if (starts.length === 0) {
+    return segments;
+  }
+
+  const divisibleByThousandCount = starts.filter(
+    (start) => Number.isInteger(start) && Math.abs(start) % 1000 === 0
+  ).length;
+  const maxStart = Math.max(...starts);
+  const avgStart = starts.reduce((sum, value) => sum + value, 0) / starts.length;
+  const isLikelyMilliseconds =
+    maxStart >= 1000 &&
+    (divisibleByThousandCount / starts.length >= 0.25 ||
+      maxStart > 24 * 60 * 60 ||
+      avgStart > 2 * 60 * 60);
+
+  if (!isLikelyMilliseconds) {
+    return segments;
+  }
+
+  return segments.map((segment) => ({
+    ...segment,
+    start: Number.isFinite(Number(segment?.start))
+      ? Number(segment.start) / 1000
+      : segment.start,
+  }));
+}
+
+function buildVideoTranscriptTimestampLink(item, answerText) {
+  if (!item || String(item?.parsedType || "").toLowerCase() !== "whisper_transcript") {
+    return null;
+  }
+
+  const structuredSegments = Array.isArray(item?.record?.structured?.segments)
+    ? item.record.structured.segments
+    : [];
+  const scaledSegments = normalizeSegmentStartScale(structuredSegments);
+  const normalizedSegments = scaledSegments
+    .filter(
+      (segment) =>
+        Number.isFinite(Number(segment?.start)) &&
+        String(segment?.text || "").trim()
+    )
+    .map((segment) => ({
+      start: Number(segment.start),
+      text: String(segment.text || "").trim(),
+    }));
+
+  if (normalizedSegments.length === 0) {
+    return null;
+  }
+
+  const answerTokens = new Set(
+    tokenize(answerText).filter((token) => token.length > 2)
+  );
+
+  const scoredSegments = normalizedSegments
+    .map((segment) => {
+      const segmentTokens = tokenize(segment.text);
+      let overlap = 0;
+      for (const token of segmentTokens) {
+        if (answerTokens.has(token)) {
+          overlap += 1;
+        }
+      }
+
+      return {
+        ...segment,
+        overlap,
+      };
+    })
+    .sort((a, b) => {
+      if (b.overlap !== a.overlap) {
+        return b.overlap - a.overlap;
+      }
+      return a.start - b.start;
+    });
+
+  const topSegments = scoredSegments
+    .slice(0, 3)
+    .sort((a, b) => a.start - b.start)
+    .map((segment) => ({
+      start: segment.start,
+      text: segment.text,
+    }));
+
+  const primarySegment = scoredSegments[0] || topSegments[0];
+  const startSeconds = Number(primarySegment?.start ?? null);
+  if (!Number.isFinite(startSeconds)) {
+    return null;
+  }
+
+  const videoId = String(item?.record?.metadata?.videoId || item?.videoId || "").trim();
+
+  return {
+    timestamp: formatTranscriptTimestamp(startSeconds),
+    timestampSeconds: Math.floor(startSeconds),
+    transcriptSnippet: primarySegment?.text || null,
+    transcriptSegments: topSegments,
+    videoId: videoId || null,
+  };
 }
 
 async function getSearch(req, res) {
   res.statusCode = 200;
   res.setHeader("Content-Type", "application/json");
   res.end(
-    JSON.stringify({ message: "POST /search to query your county uploads" }),
+    JSON.stringify({ message: "POST /search to query your county uploads" })
   );
 }
 
@@ -334,7 +419,7 @@ async function postSearch(req, res) {
     if (!county) {
       res.statusCode = 400;
       res.end(
-        JSON.stringify({ error: "No county is associated with your account" }),
+        JSON.stringify({ error: "No county is associated with your account" })
       );
       return;
     }
@@ -372,51 +457,48 @@ async function postSearch(req, res) {
         JSON.stringify({
           result: "I do not have that information.",
           sources: [],
-        }),
+        })
       );
       return;
     }
 
-    const matches = rankedMatches.map((item) => item.record);
-    const contextMatches = dedupeMatchesBySource(matches);
-
-    const context = contextMatches
-      .map((item, index) => `[${index + 1}] (${item.source}) ${item.text}`)
-      .join("\n\n");
+    const evidenceMatches = selectTopChunksPerSource(rankedMatches);
+    const evidenceItems = buildEvidenceItems(evidenceMatches);
 
     const model = genAi.getGenerativeModel({
       model: "gemini-2.5-flash",
       systemInstruction: `You are an expert assistant tasked with rewriting and summarizing source text into clean, professional, and completely original phrasing.
 
     CRITICAL RULES:
-    1. STRICT PARAPHRASING: You must completely rephrase the information using your own words, sentence structures, and vocabulary. Never copy blocks of text, distinct clauses, or unique sentence layouts directly from the source. 
-    2. FACTUAL RIGOR: While you must completely change the wording, you must remain 100% faithful to the facts in the provided context. Do not invent details, extrapolate, or bring in outside knowledge.
-    3. FALLBACK: If the provided context does not contain information to answer the prompt, reply exactly: "I do not have that information."
-    4. STYLE: Present the summary in a professional, objective tone. Use clean bullet points or concise paragraphs rather than mimicking the conversational style of a transcript.`,
+    1. STRICT PARAPHRASING: You must completely rephrase the information using your own words, sentence structures, and vocabulary. Never copy blocks of text directly from the source. 
+    2. FACTUAL RIGOR: Remain 100% faithful to the facts in the provided context. Do not invent details or bring in outside knowledge.
+    3. FALLBACK: If the context does not contain information to answer the prompt, reply exactly: "I do not have that information."
+    4. STYLE: Present the summary in a professional, objective tone.`,
       generationConfig: {
         temperature: 0.4,
       },
     });
 
-    const groundedPrompt = `Context:\n${context}\n\nQuestion:\n${prompt}`;
+    const contextText = evidenceItems
+      .map((item) => `[Source: ${item.source}]\n${item.text}`)
+      .join("\n\n");
+    const groundedPrompt = `Context:\n${contextText}\n\nQuestion: ${prompt}`;
+
     const result = await model.generateContent(groundedPrompt);
-    let text = result.response.text();
+    const resultText = result.response.text();
 
-    const sources = /^i do not have that information\.?$/i.test(
-      String(text).trim(),
-    )
-      ? []
-      : getSupportingSources(contextMatches, text);
-
-    res.statusCode = 200;
-    const responseSources = sources.map((item) => {
+    const responseSources = evidenceItems.map((item, index) => {
       const fallback =
-        item.documentId && item.originalStoredPath
+        item.documentId
           ? item
           : findPdfDocumentBySource(countyUploads, item.source);
+      const videoTimestampLink =
+        index === 0
+          ? buildVideoTranscriptTimestampLink(item, resultText)
+          : null;
 
       return {
-        id: item.id,
+        id: item.chunkId,
         source: item.source,
         documentId: fallback?.documentId || item.documentId || null,
         originalFileName:
@@ -424,14 +506,25 @@ async function postSearch(req, res) {
           item.originalFileName ||
           item.source ||
           null,
+        parsedType: item.parsedType || null,
+        ...(videoTimestampLink
+          ? {
+              timestamp: videoTimestampLink.timestamp,
+              timestampSeconds: videoTimestampLink.timestampSeconds,
+              transcriptSnippet: videoTimestampLink.transcriptSnippet,
+              transcriptSegments: videoTimestampLink.transcriptSegments,
+              videoId: videoTimestampLink.videoId,
+            }
+          : {}),
       };
     });
 
+    res.statusCode = 200;
     res.end(
       JSON.stringify({
-        result: text,
+        result: resultText,
         sources: responseSources,
-      }),
+      })
     );
   } catch (error) {
     res.statusCode = error.message === "Payload too large" ? 413 : 400;
@@ -442,4 +535,6 @@ async function postSearch(req, res) {
 module.exports = {
   getSearch,
   postSearch,
+  buildVideoTranscriptTimestampLink,
+  findPdfDocumentBySource,
 };

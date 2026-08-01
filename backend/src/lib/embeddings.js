@@ -1,42 +1,105 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const EMBEDDING_MODEL = "text-embedding-004";
+const DEFAULT_EMBEDDING_MODELS = [
+  "text-embedding-004",
+  "embedding-001",
+  "gemini-embedding-001",
+];
+const EMBEDDING_MODEL =
+  (process.env.EMBEDDING_MODEL || "").trim() || DEFAULT_EMBEDDING_MODELS[0];
 const EMBEDDING_MAX_CHARS = 8000;
 
-let cachedModel = null;
+let cachedClient = null;
+const modelCache = new Map();
+let activeEmbeddingModel = EMBEDDING_MODEL;
 
-function getEmbeddingModel() {
-  if (cachedModel) {
-    return cachedModel;
+function getEmbeddingClient() {
+  if (cachedClient) {
+    return cachedClient;
   }
 
   if (!process.env.GEMINI_API_KEY) {
-    return null;
+    throw new Error("Missing GEMINI_API_KEY for embeddings");
   }
 
-  const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  cachedModel = client.getGenerativeModel({ model: EMBEDDING_MODEL });
-  return cachedModel;
+  cachedClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  return cachedClient;
+}
+
+function getEmbeddingModel(modelName) {
+  if (modelCache.has(modelName)) {
+    return modelCache.get(modelName);
+  }
+
+  const model = getEmbeddingClient().getGenerativeModel({ model: modelName });
+  modelCache.set(modelName, model);
+  return model;
+}
+
+function getEmbeddingModelCandidates() {
+  const configured = (process.env.EMBEDDING_MODEL || "").trim();
+  const ordered = [];
+
+  if (activeEmbeddingModel) {
+    ordered.push(activeEmbeddingModel);
+  }
+
+  if (configured) {
+    ordered.push(configured);
+  }
+
+  for (const fallback of DEFAULT_EMBEDDING_MODELS) {
+    ordered.push(fallback);
+  }
+
+  return [...new Set(ordered)];
+}
+
+function isUnavailableModelError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("404") ||
+    message.includes("not found") ||
+    message.includes("not supported") ||
+    message.includes("unknown model")
+  );
 }
 
 async function embedText(text, maxChars = EMBEDDING_MAX_CHARS) {
-  const model = getEmbeddingModel();
-  if (!model) {
-    return null;
-  }
-
   const input = String(text || "").slice(0, maxChars);
   if (!input.trim()) {
     return null;
   }
 
-  try {
-    const response = await model.embedContent(input);
-    const values = response?.embedding?.values;
-    return Array.isArray(values) ? values : null;
-  } catch {
-    return null;
+  const attemptErrors = [];
+
+  for (const modelName of getEmbeddingModelCandidates()) {
+    const model = getEmbeddingModel(modelName);
+
+    try {
+      const response = await model.embedContent(input);
+      const values = response?.embedding?.values;
+      if (!Array.isArray(values) || values.length === 0) {
+        throw new Error("Embedding provider returned an empty vector");
+      }
+
+      activeEmbeddingModel = modelName;
+      return values;
+    } catch (error) {
+      const message = error?.message || "Unknown embedding error";
+      attemptErrors.push(`${modelName}: ${message}`);
+
+      if (isUnavailableModelError(error)) {
+        continue;
+      }
+
+      throw new Error(`Embedding request failed (${modelName}): ${message}`);
+    }
   }
+
+  throw new Error(
+    `Embedding request failed. Tried models: ${getEmbeddingModelCandidates().join(", ")}. Errors: ${attemptErrors.join(" | ")}`,
+  );
 }
 
 async function mapWithConcurrency(items, concurrency, worker) {

@@ -21,6 +21,18 @@ const CHUNK_OVERLAP = 200;
 const EMBEDDING_CONCURRENCY = 4;
 const DOCUMENTS_DIR = path.join(__dirname, "../../data/documents");
 
+function assertEmbeddingsPresent(records) {
+  const missingCount = records.filter(
+    (record) => !Array.isArray(record.embedding) || record.embedding.length === 0,
+  ).length;
+
+  if (missingCount > 0) {
+    throw new Error(
+      `Embedding generation failed for ${missingCount} upload chunk(s)`,
+    );
+  }
+}
+
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -294,6 +306,7 @@ async function uploadFile(req, res) {
     }
 
     await attachEmbeddings(normalized, { concurrency: EMBEDDING_CONCURRENCY });
+    assertEmbeddingsPresent(normalized);
 
     if (normalized.length === 0) {
       res.statusCode = 400;

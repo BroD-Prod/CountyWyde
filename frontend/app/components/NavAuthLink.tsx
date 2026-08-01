@@ -4,6 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
+const API_BASE_RAW =
+  process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE =
+  API_BASE_RAW && API_BASE_RAW !== "undefined" && API_BASE_RAW !== "null"
+    ? API_BASE_RAW
+    : "http://localhost:1337";
+
 export default function NavAuthLink() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -12,7 +19,7 @@ export default function NavAuthLink() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("http://localhost:1337/account/session", {
+    fetch(`${API_BASE}/account/session`, {
       method: "GET",
       credentials: "include",
     })
