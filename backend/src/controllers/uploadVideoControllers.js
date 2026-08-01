@@ -393,11 +393,11 @@ function buildTranscriptUploadRecords(
 }
 
 async function upsertTranscriptUploads(records) {
-  insertChunks(records);
+  await insertChunks(records);
 }
 
 async function uploadVideoFile(req, res) {
-  const user = helperController.getAuthenticatedUser(req, {
+  const user = await helperController.getAuthenticatedUser(req, {
     includeState: true,
     cleanupExpired: true,
   });

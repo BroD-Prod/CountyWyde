@@ -21,46 +21,6 @@ const ROUTE_LIMITS = {
   "POST:/upload": 30,
 };
 
-db.exec(`
-    CREATE TABLE IF NOT EXISTS security_rate_limits (
-        ip TEXT NOT NULL,
-        method TEXT NOT NULL,
-        path TEXT NOT NULL,
-        count INTEGER NOT NULL,
-        reset_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (ip, method, path)
-    );
-`);
-
-db.exec(`
-    CREATE TABLE IF NOT EXISTS security_blocks (
-        ip TEXT PRIMARY KEY,
-        blocked_until INTEGER NOT NULL,
-        reason TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-    );
-`);
-
-db.exec(`
-    CREATE TABLE IF NOT EXISTS security_suspicion (
-        ip TEXT PRIMARY KEY,
-        score INTEGER NOT NULL,
-        reset_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-    );
-`);
-
-db.exec(
-  "CREATE INDEX IF NOT EXISTS idx_security_rate_limits_reset_at ON security_rate_limits(reset_at);",
-);
-db.exec(
-  "CREATE INDEX IF NOT EXISTS idx_security_blocks_blocked_until ON security_blocks(blocked_until);",
-);
-db.exec(
-  "CREATE INDEX IF NOT EXISTS idx_security_suspicion_reset_at ON security_suspicion(reset_at);",
-);
-
 let lastCleanupAt = 0;
 const CLEANUP_INTERVAL_MS = 60 * 1000;
 
@@ -113,22 +73,22 @@ function beginRequest(req) {
   };
 }
 
-function cleanupExpiredSecurityRows() {
+async function cleanupExpiredSecurityRows() {
   const now = Date.now();
   if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) {
     return;
   }
 
   lastCleanupAt = now;
-  db.prepare("DELETE FROM security_rate_limits WHERE reset_at <= ?").run(now);
-  db.prepare("DELETE FROM security_blocks WHERE blocked_until <= ?").run(now);
-  db.prepare("DELETE FROM security_suspicion WHERE reset_at <= ?").run(now);
+  await db.prepare("DELETE FROM security_rate_limits WHERE reset_at <= ?").run(now);
+  await db.prepare("DELETE FROM security_blocks WHERE blocked_until <= ?").run(now);
+  await db.prepare("DELETE FROM security_suspicion WHERE reset_at <= ?").run(now);
 }
 
-function getBlockInfo(ip) {
-  cleanupExpiredSecurityRows();
+async function getBlockInfo(ip) {
+  await cleanupExpiredSecurityRows();
 
-  const info = db
+  const info = await db
     .prepare(
       "SELECT blocked_until AS blockedUntil, reason, created_at AS createdAt FROM security_blocks WHERE ip = ? LIMIT 1",
     )
@@ -139,32 +99,33 @@ function getBlockInfo(ip) {
   }
 
   if (info.blockedUntil <= Date.now()) {
-    db.prepare("DELETE FROM security_blocks WHERE ip = ?").run(ip);
+    await db.prepare("DELETE FROM security_blocks WHERE ip = ?").run(ip);
     return null;
   }
 
   return info;
 }
 
-function isBlocked(req) {
+async function isBlocked(req) {
   if (isLocalDevRequest(req)) {
     return null;
   }
-
   const ip = getClientIp(req);
   return getBlockInfo(ip);
 }
 
-function blockIp(ip, reason) {
+async function blockIp(ip, reason) {
   const blockedUntil = Date.now() + BLOCK_DURATION_MS;
-  db.prepare(
-    `INSERT INTO security_blocks (ip, blocked_until, reason, created_at)
+  await db
+    .prepare(
+      `INSERT INTO security_blocks (ip, blocked_until, reason, created_at)
          VALUES (?, ?, ?, ?)
          ON CONFLICT(ip) DO UPDATE SET
            blocked_until = excluded.blocked_until,
            reason = excluded.reason,
            created_at = excluded.created_at`,
-  ).run(ip, blockedUntil, reason, Date.now());
+    )
+    .run(ip, blockedUntil, reason, Date.now());
 
   void appendJsonLine(SECURITY_LOG_FILE, {
     ts: nowIso(),
@@ -175,11 +136,10 @@ function blockIp(ip, reason) {
   });
 }
 
-function checkRateLimit(req) {
+async function checkRateLimit(req) {
   if (isLocalDevRequest(req)) {
     return { allowed: true };
   }
-
   if (req.method === "OPTIONS") {
     return { allowed: true };
   }
@@ -190,9 +150,9 @@ function checkRateLimit(req) {
   const now = Date.now();
   const limit = getRouteLimit(req);
 
-  cleanupExpiredSecurityRows();
+  await cleanupExpiredSecurityRows();
 
-  const row = db
+  const row = await db
     .prepare(
       `SELECT count, reset_at AS resetAt
          FROM security_rate_limits
@@ -202,26 +162,30 @@ function checkRateLimit(req) {
     .get(ip, req.method, path);
 
   if (!row || row.resetAt <= now) {
-    db.prepare(
-      `INSERT INTO security_rate_limits (ip, method, path, count, reset_at, updated_at)
+    await db
+      .prepare(
+        `INSERT INTO security_rate_limits (ip, method, path, count, reset_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(ip, method, path) DO UPDATE SET
                count = excluded.count,
                reset_at = excluded.reset_at,
                updated_at = excluded.updated_at`,
-    ).run(ip, req.method, path, 1, now + WINDOW_MS, now);
+      )
+      .run(ip, req.method, path, 1, now + WINDOW_MS, now);
     return { allowed: true };
   }
 
   const nextCount = row.count + 1;
-  db.prepare(
-    `UPDATE security_rate_limits
+  await db
+    .prepare(
+      `UPDATE security_rate_limits
          SET count = ?, updated_at = ?
          WHERE ip = ? AND method = ? AND path = ?`,
-  ).run(nextCount, now, ip, req.method, path);
+    )
+    .run(nextCount, now, ip, req.method, path);
 
   if (nextCount > limit * 2) {
-    blockIp(ip, "excessive_request_rate");
+    await blockIp(ip, "excessive_request_rate");
     return {
       allowed: false,
       statusCode: 403,
@@ -253,20 +217,19 @@ function checkRateLimit(req) {
   return { allowed: true };
 }
 
-function addSuspicion(req, delta, reason) {
+async function addSuspicion(req, delta, reason) {
   if (isLocalDevRequest(req)) {
     return;
   }
-
   if (delta <= 0) {
     return;
   }
 
   const ip = getClientIp(req);
   const now = Date.now();
-  cleanupExpiredSecurityRows();
+  await cleanupExpiredSecurityRows();
 
-  const row = db
+  const row = await db
     .prepare(
       "SELECT score, reset_at AS resetAt FROM security_suspicion WHERE ip = ? LIMIT 1",
     )
@@ -276,14 +239,16 @@ function addSuspicion(req, delta, reason) {
   const resetAt =
     !row || row.resetAt <= now ? now + SCORE_WINDOW_MS : row.resetAt;
 
-  db.prepare(
-    `INSERT INTO security_suspicion (ip, score, reset_at, updated_at)
+  await db
+    .prepare(
+      `INSERT INTO security_suspicion (ip, score, reset_at, updated_at)
          VALUES (?, ?, ?, ?)
          ON CONFLICT(ip) DO UPDATE SET
            score = excluded.score,
            reset_at = excluded.reset_at,
            updated_at = excluded.updated_at`,
-  ).run(ip, currentScore, resetAt, now);
+    )
+    .run(ip, currentScore, resetAt, now);
 
   void appendJsonLine(SECURITY_LOG_FILE, {
     ts: nowIso(),
@@ -296,40 +261,40 @@ function addSuspicion(req, delta, reason) {
   });
 
   if (currentScore >= SCORE_BLOCK_THRESHOLD) {
-    blockIp(ip, `suspicion_threshold:${reason}`);
-    db.prepare("DELETE FROM security_suspicion WHERE ip = ?").run(ip);
+    await blockIp(ip, `suspicion_threshold:${reason}`);
+    await db.prepare("DELETE FROM security_suspicion WHERE ip = ?").run(ip);
   }
 }
 
-function inspectResponseForSuspicion(req, statusCode) {
+async function inspectResponseForSuspicion(req, statusCode) {
   const path = getPath(req);
 
   if (statusCode === 404) {
-    addSuspicion(req, 1, "not_found_scanning");
+    await addSuspicion(req, 1, "not_found_scanning");
   }
 
   if (statusCode === 413) {
-    addSuspicion(req, 4, "payload_too_large");
+    await addSuspicion(req, 4, "payload_too_large");
   }
 
   if (statusCode === 429 && path !== "/account/session") {
-    addSuspicion(req, 3, "rate_limited_repeatedly");
+    await addSuspicion(req, 3, "rate_limited_repeatedly");
   }
 
   if (path === "/account/login" && (statusCode === 401 || statusCode === 403)) {
-    addSuspicion(req, 2, "failed_login_attempt");
+    await addSuspicion(req, 2, "failed_login_attempt");
   }
 
   if (path.startsWith("/admin/") && statusCode === 403) {
-    addSuspicion(req, 3, "admin_key_failures");
+    await addSuspicion(req, 3, "admin_key_failures");
   }
 }
 
-function completeRequest(req, res, context) {
+async function completeRequest(req, res, context) {
   const statusCode = Number(res.statusCode || 200);
   const durationMs = Date.now() - context.startedAt;
 
-  inspectResponseForSuspicion(req, statusCode);
+  await inspectResponseForSuspicion(req, statusCode);
 
   void appendJsonLine(REQUEST_LOG_FILE, {
     ts: nowIso(),
@@ -343,13 +308,13 @@ function completeRequest(req, res, context) {
   });
 }
 
-function getSecuritySnapshot(limit = 100) {
-  cleanupExpiredSecurityRows();
+async function getSecuritySnapshot(limit = 100) {
+  await cleanupExpiredSecurityRows();
 
   const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
   const now = Date.now();
 
-  const blocked = db
+  const blocked = await db
     .prepare(
       `SELECT ip, reason, blocked_until AS blockedUntil, created_at AS createdAt
          FROM security_blocks
@@ -358,7 +323,7 @@ function getSecuritySnapshot(limit = 100) {
     )
     .all(safeLimit);
 
-  const suspicious = db
+  const suspicious = await db
     .prepare(
       `SELECT ip, score, reset_at AS resetAt, updated_at AS updatedAt
          FROM security_suspicion
@@ -367,7 +332,7 @@ function getSecuritySnapshot(limit = 100) {
     )
     .all(safeLimit);
 
-  const rateLimited = db
+  const rateLimited = await db
     .prepare(
       `SELECT ip, method, path, count, reset_at AS resetAt, updated_at AS updatedAt
          FROM security_rate_limits
@@ -380,37 +345,33 @@ function getSecuritySnapshot(limit = 100) {
   return { blocked, suspicious, rateLimited };
 }
 
-function clearSecurityForIp(ip) {
+async function clearSecurityForIp(ip) {
   const normalizedIp = String(ip || "").trim();
   if (!normalizedIp) {
     return 0;
   }
 
-  const tx = db.transaction(() => {
-    const a = db
-      .prepare("DELETE FROM security_blocks WHERE ip = ?")
-      .run(normalizedIp).changes;
-    const b = db
-      .prepare("DELETE FROM security_suspicion WHERE ip = ?")
-      .run(normalizedIp).changes;
-    const c = db
-      .prepare("DELETE FROM security_rate_limits WHERE ip = ?")
-      .run(normalizedIp).changes;
+  return db.transaction(async (tx) => {
+    const a = (await tx.run("DELETE FROM security_blocks WHERE ip = ?", [
+      normalizedIp,
+    ])).changes;
+    const b = (await tx.run("DELETE FROM security_suspicion WHERE ip = ?", [
+      normalizedIp,
+    ])).changes;
+    const c = (await tx.run("DELETE FROM security_rate_limits WHERE ip = ?", [
+      normalizedIp,
+    ])).changes;
     return a + b + c;
   });
-
-  return tx();
 }
 
-function clearAllSecurityState() {
-  const tx = db.transaction(() => {
-    const a = db.prepare("DELETE FROM security_blocks").run().changes;
-    const b = db.prepare("DELETE FROM security_suspicion").run().changes;
-    const c = db.prepare("DELETE FROM security_rate_limits").run().changes;
+async function clearAllSecurityState() {
+  return db.transaction(async (tx) => {
+    const a = (await tx.run("DELETE FROM security_blocks")).changes;
+    const b = (await tx.run("DELETE FROM security_suspicion")).changes;
+    const c = (await tx.run("DELETE FROM security_rate_limits")).changes;
     return a + b + c;
   });
-
-  return tx();
 }
 
 module.exports = {

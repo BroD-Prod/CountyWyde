@@ -430,7 +430,7 @@ async function postSearch(req, res) {
       return;
     }
 
-    if (!isRegisteredState(state)) {
+    if (!(await isRegisteredState(state))) {
       res.statusCode = 400;
       res.end(JSON.stringify({ error: "Please select a valid state" }));
       return;
@@ -442,7 +442,7 @@ async function postSearch(req, res) {
       return;
     }
 
-    const countyUploads = readChunks({ county, state });
+    const countyUploads = await readChunks({ county, state });
     const rankedMatches = await rankHybrid(countyUploads, prompt, MAX_VECTOR, {
       county,
       state,

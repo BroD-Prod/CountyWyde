@@ -85,7 +85,7 @@ function normalizeState(value) {
   return String(value || "").trim();
 }
 
-function resolveState(input) {
+async function resolveState(input) {
   const stateInput = normalizeState(input);
   if (!stateInput) {
     return null;
@@ -107,7 +107,7 @@ async function createAccount(req, res) {
     const { username, password, county, state } =
       await helperController.parseJsonBody(req, MAX_JSON_BYTES);
     const selectedCounty = normalizeCounty(county);
-    const selectedState = resolveState(state);
+    const selectedState = await resolveState(state);
 
     const validationError = checkPasswordAndUsernameLength(username, password);
     if (validationError) {
@@ -135,7 +135,7 @@ async function createAccount(req, res) {
       return;
     }
 
-    const existing = db
+    const existing = await db
       .prepare("SELECT 1 FROM accounts WHERE username = ?")
       .get(username);
     if (existing) {
@@ -146,9 +146,11 @@ async function createAccount(req, res) {
     }
 
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-    db.prepare(
-      "INSERT INTO accounts (username, password_hash, county, state_id, approved) VALUES (?, ?, ?, ?, 0)",
-    ).run(username, hashedPassword, selectedCounty, selectedState.id);
+    await db
+      .prepare(
+        "INSERT INTO accounts (username, password_hash, county, state_id, approved) VALUES (?, ?, ?, ?, 0)",
+      )
+      .run(username, hashedPassword, selectedCounty, selectedState.id);
 
     res.statusCode = 201;
     res.setHeader("Content-Type", "application/json");
@@ -175,7 +177,7 @@ async function deleteAccount(req, res) {
     return;
   }
 
-  const authUser = helperController.getAuthenticatedUser(req, {
+  const authUser = await helperController.getAuthenticatedUser(req, {
     includeState: true,
     cleanupExpired: true,
   });
@@ -206,7 +208,7 @@ async function deleteAccount(req, res) {
       return;
     }
 
-    const existing = db
+    const existing = await db
       .prepare("SELECT * FROM accounts WHERE id = ?")
       .get(authUser.id);
     if (!existing) {
@@ -227,8 +229,8 @@ async function deleteAccount(req, res) {
       return;
     }
 
-    db.prepare("DELETE FROM sessions WHERE user_id = ?").run(existing.id);
-    db.prepare("DELETE FROM accounts WHERE id = ?").run(existing.id);
+    await db.prepare("DELETE FROM sessions WHERE user_id = ?").run(existing.id);
+    await db.prepare("DELETE FROM accounts WHERE id = ?").run(existing.id);
 
     res.setHeader("Set-Cookie", buildClearSessionCookie());
     res.statusCode = 200;
@@ -261,7 +263,7 @@ async function login(req, res) {
       return;
     }
 
-    const account = db
+    const account = await db
       .prepare("SELECT * FROM accounts WHERE username = ?")
       .get(username);
     if (!account) {
@@ -291,9 +293,11 @@ async function login(req, res) {
     const expiresAt = Date.now() + SESSION_MAX_AGE_MS;
     const createdAt = Date.now();
 
-    db.prepare(
-      "INSERT INTO sessions (user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?)",
-    ).run(account.id, tokenHash, expiresAt, createdAt);
+    await db
+      .prepare(
+        "INSERT INTO sessions (user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(account.id, tokenHash, expiresAt, createdAt);
 
     res.setHeader("Set-Cookie", buildSessionCookie(sessionToken));
     res.statusCode = 200;
@@ -306,8 +310,8 @@ async function login(req, res) {
   }
 }
 
-function getSession(req, res) {
-  const authUser = helperController.getAuthenticatedUser(req, {
+async function getSession(req, res) {
+  const authUser = await helperController.getAuthenticatedUser(req, {
     includeState: true,
     cleanupExpired: true,
   });
@@ -336,8 +340,8 @@ function getSession(req, res) {
   );
 }
 
-function getAccount(req, res) {
-  const authUser = helperController.getAuthenticatedUser(req, {
+async function getAccount(req, res) {
+  const authUser = await helperController.getAuthenticatedUser(req, {
     includeState: true,
     cleanupExpired: true,
   });
@@ -362,10 +366,10 @@ function getAccount(req, res) {
   );
 }
 
-function getCounties(req, res) {
+async function getCounties(req, res) {
   try {
     const requestUrl = new URL(req.url, "http://localhost");
-    const counties = getRegisteredCounties(
+    const counties = await getRegisteredCounties(
       requestUrl.searchParams.get("state"),
     );
     res.statusCode = 200;
@@ -378,9 +382,9 @@ function getCounties(req, res) {
   }
 }
 
-function getStates(req, res) {
+async function getStates(req, res) {
   try {
-    const states = getRegisteredStates();
+    const states = await getRegisteredStates();
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ states }));
@@ -396,7 +400,7 @@ async function updateAccount(req, res) {
     return;
   }
 
-  const authUser = helperController.getAuthenticatedUser(req, {
+  const authUser = await helperController.getAuthenticatedUser(req, {
     includeState: true,
     cleanupExpired: true,
   });
@@ -413,7 +417,7 @@ async function updateAccount(req, res) {
       MAX_JSON_BYTES,
     );
     const selectedCounty = normalizeCounty(county);
-    const resolvedState = resolveState(state);
+    const resolvedState = await resolveState(state);
 
     if (!selectedCounty || !state) {
       res.statusCode = 400;
@@ -436,16 +440,13 @@ async function updateAccount(req, res) {
       return;
     }
 
-    db.prepare("UPDATE accounts SET county = ?, state_id = ? WHERE id = ?").run(
-      selectedCounty,
-      resolvedState.id,
-      authUser.id,
-    );
+    await db
+      .prepare("UPDATE accounts SET county = ?, state_id = ? WHERE id = ?")
+      .run(selectedCounty, resolvedState.id, authUser.id);
 
-    db.prepare("UPDATE sessions SET expires_at = ? WHERE user_id = ?").run(
-      Date.now() + SESSION_MAX_AGE_MS,
-      authUser.id,
-    );
+    await db
+      .prepare("UPDATE sessions SET expires_at = ? WHERE user_id = ?")
+      .run(Date.now() + SESSION_MAX_AGE_MS, authUser.id);
 
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
@@ -468,12 +469,7 @@ async function updateAccount(req, res) {
 
 const ADMIN_KEY = String(process.env.ADMIN_KEY || "").trim();
 
-function isAdminRequest(req) {
-  if (!ADMIN_KEY) return false;
-  return req.headers["x-admin-key"] === ADMIN_KEY;
-}
-
-function getPendingAccounts(req, res) {
+async function getPendingAccounts(req, res) {
   if (!isAdminRequest(req)) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
@@ -481,7 +477,7 @@ function getPendingAccounts(req, res) {
     return;
   }
   try {
-    const rows = db
+    const rows = await db
       .prepare(
         `SELECT a.id, a.username, a.county, st.name AS state_name, st.abbreviation AS state_abbreviation
              FROM accounts a
@@ -511,7 +507,7 @@ function approveAccount(req, res) {
   req.on("data", (chunk) => {
     body += chunk.toString();
   });
-  req.on("end", () => {
+  req.on("end", async () => {
     try {
       const { id } = JSON.parse(body || "{}");
       if (!id) {
@@ -520,7 +516,7 @@ function approveAccount(req, res) {
         res.end(JSON.stringify({ error: "Account id is required" }));
         return;
       }
-      const account = db
+      const account = await db
         .prepare("SELECT id, username, approved FROM accounts WHERE id = ?")
         .get(id);
       if (!account) {
@@ -529,7 +525,7 @@ function approveAccount(req, res) {
         res.end(JSON.stringify({ error: "Account not found" }));
         return;
       }
-      db.prepare("UPDATE accounts SET approved = 1 WHERE id = ?").run(id);
+      await db.prepare("UPDATE accounts SET approved = 1 WHERE id = ?").run(id);
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ message: `Approved ${account.username}` }));
@@ -552,7 +548,7 @@ function rejectAccount(req, res) {
   req.on("data", (chunk) => {
     body += chunk.toString();
   });
-  req.on("end", () => {
+  req.on("end", async () => {
     try {
       const { id } = JSON.parse(body || "{}");
       if (!id) {
@@ -561,7 +557,7 @@ function rejectAccount(req, res) {
         res.end(JSON.stringify({ error: "Account id is required" }));
         return;
       }
-      const account = db
+      const account = await db
         .prepare(
           "SELECT id, username FROM accounts WHERE id = ? AND approved = 0",
         )
@@ -572,8 +568,8 @@ function rejectAccount(req, res) {
         res.end(JSON.stringify({ error: "Pending account not found" }));
         return;
       }
-      db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
-      db.prepare("DELETE FROM accounts WHERE id = ?").run(id);
+      await db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+      await db.prepare("DELETE FROM accounts WHERE id = ?").run(id);
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
       res.end(
@@ -596,7 +592,7 @@ async function getSecurityOverview(req, res) {
   }
 
   try {
-    const snapshot = security.getSecuritySnapshot(200);
+    const snapshot = await security.getSecuritySnapshot(200);
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify(snapshot));
@@ -620,8 +616,8 @@ async function clearSecurityState(req, res) {
     const ip = String(body.ip || "").trim();
 
     const cleared = ip
-      ? security.clearSecurityForIp(ip)
-      : security.clearAllSecurityState();
+      ? await security.clearSecurityForIp(ip)
+      : await security.clearAllSecurityState();
 
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
