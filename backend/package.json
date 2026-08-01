@@ -9,6 +9,7 @@
     "backfill:embeddings": "node src/scripts/backfillEmbeddings.js",
     "backfill:milvus": "node src/scripts/backfillMilvus.js",
     "migrate:uploads": "node src/scripts/migrateUploadsToDb.js",
+    "migrate:db": "node src/scripts/runMigrations.js",
     "lint": "eslint",
     "format": "prettier --write .",
     "test": "playwright test"

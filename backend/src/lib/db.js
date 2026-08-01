@@ -1,4 +1,5 @@
 const { Pool } = require("pg");
+const { loadMigrationFiles, runMigrations } = require("./migrations");
 
 const STATES = [
   { name: "Alabama", abbreviation: "AL" },
@@ -382,13 +383,12 @@ async function createSecurityTables() {
 }
 
 async function initializeDb() {
-  await createCoreTables();
-  await seedStates();
-  await migrateAccountsTable();
-  await createTranscriptionTables();
-  await createUploadChunksTable();
-  await createSecurityTables();
-  await createIndexes();
+  const migrationDb = {
+    query: (sql, params = []) => rawQuery(sql, params),
+  };
+
+  const migrations = await loadMigrationFiles();
+  await runMigrations({ db: migrationDb, migrations });
 }
 
 const ready = initializeDb();
