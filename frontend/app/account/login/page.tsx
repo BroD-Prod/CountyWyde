@@ -127,14 +127,17 @@ export default function Login() {
           </form>
 
           <h2 className="mt-6 text-center text-sm text-slate-500">
-            Don&apos;t have an account?{" "}
+            Need access?{" "}
             <a
               href="/contact"
               className="font-semibold text-slate-700 hover:text-slate-900"
             >
-              Contact Us
+              Request access
             </a>
           </h2>
+          <p className="mt-2 text-center text-xs leading-6 text-slate-500">
+            Accounts are created after manual approval by the team.
+          </p>
         </div>
       </section>
     </main>
