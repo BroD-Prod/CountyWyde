@@ -11,6 +11,13 @@ type SessionResponse = {
     };
 };
 
+const API_BASE_RAW =
+    process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE =
+    API_BASE_RAW && API_BASE_RAW !== "undefined" && API_BASE_RAW !== "null"
+        ? API_BASE_RAW
+        : "http://localhost:1337";
+
 export default function ChangePasswordPage() {
     const [checkingSession, setCheckingSession] = useState(true);
     const [username, setUsername] = useState("");
@@ -23,7 +30,7 @@ export default function ChangePasswordPage() {
     const { showAlert } = useAlert();
 
     useEffect(() => {
-        fetch("http://localhost:1337/account/session", {
+        fetch(`${API_BASE}/account/session`, {
             method: "GET",
             credentials: "include",
         })
@@ -65,7 +72,7 @@ export default function ChangePasswordPage() {
 
         setSubmitting(true);
         try {
-            const response = await fetch("http://localhost:1337/account/password", {
+            const response = await fetch(`${API_BASE}/account/password`, {
                 method: "PATCH",
                 credentials: "include",
                 headers: {

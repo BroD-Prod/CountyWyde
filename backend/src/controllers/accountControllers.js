@@ -182,12 +182,17 @@ async function resolveState(input) {
 }
 
 function generateTemporaryPassword(length = 16) {
-  const bytesNeeded = Math.ceil(length * 0.75);
-  return crypto
-    .randomBytes(bytesNeeded)
-    .toString("base64")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .slice(0, Math.max(length, 12));
+  const targetLength = Math.max(length, 12);
+  let output = "";
+
+  while (output.length < targetLength) {
+    output += crypto
+      .randomBytes(targetLength)
+      .toString("base64")
+      .replace(/[^a-zA-Z0-9]/g, "");
+  }
+
+  return output.slice(0, targetLength);
 }
 
 async function requestAccountAccess(req, res) {
@@ -1194,14 +1199,12 @@ function approveAccountRequest(req, res) {
     return;
   }
 
-  let body = "";
-  req.on("data", (chunk) => {
-    body += chunk.toString();
-  });
-
-  req.on("end", async () => {
+  void (async () => {
     try {
-      const { id, username, reviewNotes } = JSON.parse(body || "{}");
+      const { id, username, reviewNotes } = await helperController.parseJsonBody(
+        req,
+        MAX_JSON_BYTES,
+      );
       if (!id) {
         res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
@@ -1285,12 +1288,12 @@ function approveAccountRequest(req, res) {
           },
         }),
       );
-    } catch {
-      res.statusCode = 400;
+    } catch (error) {
+      res.statusCode = error.message === "Payload too large" ? 413 : 400;
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ error: "Invalid JSON body" }));
+      res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
     }
-  });
+  })();
 }
 
 function rejectAccountRequest(req, res) {
@@ -1301,14 +1304,12 @@ function rejectAccountRequest(req, res) {
     return;
   }
 
-  let body = "";
-  req.on("data", (chunk) => {
-    body += chunk.toString();
-  });
-
-  req.on("end", async () => {
+  void (async () => {
     try {
-      const { id, reviewNotes } = JSON.parse(body || "{}");
+      const { id, reviewNotes } = await helperController.parseJsonBody(
+        req,
+        MAX_JSON_BYTES,
+      );
       if (!id) {
         res.statusCode = 400;
         res.setHeader("Content-Type", "application/json");
@@ -1337,12 +1338,12 @@ function rejectAccountRequest(req, res) {
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ message: "Account request denied" }));
-    } catch {
-      res.statusCode = 400;
+    } catch (error) {
+      res.statusCode = error.message === "Payload too large" ? 413 : 400;
       res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ error: "Invalid JSON body" }));
+      res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
     }
-  });
+  })();
 }
 
 function approveAccount(req, res) {

@@ -3,6 +3,13 @@
 import { FormEvent, useState } from "react";
 import { useAlert } from "../../components/AlertProvider";
 
+const API_BASE_RAW =
+    process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE =
+    API_BASE_RAW && API_BASE_RAW !== "undefined" && API_BASE_RAW !== "null"
+        ? API_BASE_RAW
+        : "http://localhost:1337";
+
 export default function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -26,7 +33,7 @@ export default function ForgotPasswordPage() {
         setResetUrl("");
         setSubmitting(true);
         try {
-            const response = await fetch("http://localhost:1337/account/password/forgot", {
+            const response = await fetch(`${API_BASE}/account/password/forgot`, {
                 method: "POST",
                 credentials: "include",
                 headers: {
@@ -88,7 +95,7 @@ export default function ForgotPasswordPage() {
                         </button>
                     </form>
 
-                    {resetUrl ? (
+                    {process.env.NODE_ENV !== "production" && resetUrl ? (
                         <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
                             <p className="font-semibold">Development reset link</p>
                             <a
