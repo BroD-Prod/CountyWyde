@@ -9,7 +9,7 @@ async function main() {
     throw new Error("Missing GEMINI_API_KEY");
   }
 
-  const all = readChunks();
+  const all = await readChunks();
   const pending = all.filter(
     (item) => !Array.isArray(item.embedding) || item.embedding.length === 0,
   );
@@ -25,7 +25,7 @@ async function main() {
   let failed = 0;
   for (const item of pending) {
     if (Array.isArray(item.embedding) && item.embedding.length > 0) {
-      updateChunkEmbedding(item.id, item.embedding);
+      await updateChunkEmbedding(item.id, item.embedding, item.county);
       updated += 1;
     } else {
       failed += 1;

@@ -76,7 +76,7 @@ function chunkToRow(chunk) {
  * @param {{ county?: string, state?: string, documentId?: string, source?: string }} filter
  * @returns {object[]}
  */
-function readChunks({ county, state, documentId, source } = {}) {
+async function readChunks({ county, state, documentId, source } = {}) {
   const conditions = [];
   const params = [];
 
@@ -99,7 +99,7 @@ function readChunks({ county, state, documentId, source } = {}) {
 
   const where =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const rows = db
+  const rows = await db
     .prepare(`SELECT * FROM upload_chunks ${where} ORDER BY created_at ASC`)
     .all(...params);
   return rows.map(rowToChunk);
@@ -109,30 +109,47 @@ function readChunks({ county, state, documentId, source } = {}) {
  * Insert an array of chunks in a single transaction. Skips duplicates by id.
  * @param {object[]} chunks
  */
-function insertChunks(chunks) {
+async function insertChunks(chunks) {
   if (!Array.isArray(chunks) || chunks.length === 0) return;
 
-  const stmt = db.prepare(`
-    INSERT OR IGNORE INTO upload_chunks (
-      id, source, text, parsed_type, metadata, structured,
-      county, state, chunk_index, chunk_count, row_index,
-      document_id, original_file_name, original_mime_type, original_size,
-      original_stored_filename, original_stored_path, original_stored_at,
-      embedding, created_at
-    ) VALUES (
-      @id, @source, @text, @parsed_type, @metadata, @structured,
-      @county, @state, @chunk_index, @chunk_count, @row_index,
-      @document_id, @original_file_name, @original_mime_type, @original_size,
-      @original_stored_filename, @original_stored_path, @original_stored_at,
-      @embedding, @created_at
-    )
-  `);
-
-  const insertMany = db.transaction((rows) => {
-    for (const row of rows) stmt.run(row);
+  const rows = chunks.map(chunkToRow);
+  await db.transaction(async (tx) => {
+    for (const row of rows) {
+      await tx.query(
+        `INSERT INTO upload_chunks (
+          id, source, text, parsed_type, metadata, structured,
+          county, state, chunk_index, chunk_count, row_index,
+          document_id, original_file_name, original_mime_type, original_size,
+          original_stored_filename, original_stored_path, original_stored_at,
+          embedding, created_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ) ON CONFLICT(id) DO NOTHING`,
+        [
+          row.id,
+          row.source,
+          row.text,
+          row.parsed_type,
+          row.metadata,
+          row.structured,
+          row.county,
+          row.state,
+          row.chunk_index,
+          row.chunk_count,
+          row.row_index,
+          row.document_id,
+          row.original_file_name,
+          row.original_mime_type,
+          row.original_size,
+          row.original_stored_filename,
+          row.original_stored_path,
+          row.original_stored_at,
+          row.embedding,
+          row.created_at,
+        ],
+      );
+    }
   });
-
-  insertMany(chunks.map(chunkToRow));
 }
 
 /**
@@ -141,11 +158,13 @@ function insertChunks(chunks) {
  * @param {number[]} embedding
  * @param {string} county
  */
-function updateChunkEmbedding(id, embedding, county) {
+async function updateChunkEmbedding(id, embedding, county) {
   const value = Array.isArray(embedding) ? JSON.stringify(embedding) : null;
-  db.prepare(
-    "UPDATE upload_chunks SET embedding = ? WHERE id = ? AND LOWER(county) = LOWER(?)",
-  ).run(value, id);
+  await db
+    .prepare(
+      "UPDATE upload_chunks SET embedding = ? WHERE id = ? AND LOWER(county) = LOWER(?)",
+    )
+    .run(value, id, county);
 }
 
 /**
@@ -154,8 +173,8 @@ function updateChunkEmbedding(id, embedding, county) {
  * @param {string} county
  * @returns {number} rows deleted
  */
-function deleteChunksById(id, county) {
-  const result = db
+async function deleteChunksById(id, county) {
+  const result = await db
     .prepare(
       "DELETE FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)",
     )
@@ -169,8 +188,8 @@ function deleteChunksById(id, county) {
  * @param {string} county
  * @returns {number} rows deleted
  */
-function deleteChunksBySource(source, county) {
-  const result = db
+async function deleteChunksBySource(source, county) {
+  const result = await db
     .prepare(
       "DELETE FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)",
     )
@@ -182,9 +201,9 @@ function deleteChunksBySource(source, county) {
  * Return the ids of all chunks matching id or source within a county,
  * without deleting them. Used to collect Milvus ids before deletion.
  */
-function findChunkIds({ id, source, county }) {
+async function findChunkIds({ id, source, county }) {
   if (id) {
-    const row = db
+    const row = await db
       .prepare(
         "SELECT id FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)",
       )
@@ -192,7 +211,7 @@ function findChunkIds({ id, source, county }) {
     return row ? [row.id] : [];
   }
   if (source) {
-    const rows = db
+    const rows = await db
       .prepare(
         "SELECT id FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)",
       )

@@ -9,15 +9,16 @@
     "backfill:embeddings": "node src/scripts/backfillEmbeddings.js",
     "backfill:milvus": "node src/scripts/backfillMilvus.js",
     "migrate:uploads": "node src/scripts/migrateUploadsToDb.js",
+    "migrate:db": "node src/scripts/runMigrations.js",
     "lint": "eslint",
     "format": "prettier --write .",
     "test": "playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.884.0",
     "@google/generative-ai": "^0.24.1",
     "@zilliz/milvus2-sdk-node": "^2.6.17",
     "bcrypt": "^6.0.0",
-    "better-sqlite3": "^12.10.0",
     "csv-parse": "^6.2.1",
     "dotenv": "^17.4.2",
     "ffmpeg": "^0.0.4",
@@ -25,6 +26,7 @@
     "mammoth": "^1.12.0",
     "node": "^24.16.0",
     "pdf-parse": "^2.4.5",
+    "pg": "^8.22.0",
     "prettier": "^3.8.3",
     "proper-lockfile": "^4.1.2"
   }

@@ -2,7 +2,7 @@
  * migrateUploadsToDb.js
  *
  * One-time migration: reads existing uploads.json and inserts all records
- * into the upload_chunks SQLite table. Safe to re-run — uses INSERT OR IGNORE.
+ * into the upload_chunks Postgres table. Safe to re-run — uses ON CONFLICT DO NOTHING.
  *
  * Usage:
  *   node src/scripts/migrateUploadsToDb.js
@@ -18,7 +18,7 @@ const { insertChunks } = require("../lib/uploadStore");
 const DATA_FILE = path.join(__dirname, "../../data/uploads.json");
 const BATCH_SIZE = 500;
 
-function main() {
+async function main() {
   if (!fs.existsSync(DATA_FILE)) {
     console.log("uploads.json not found — nothing to migrate.");
     return;
@@ -53,7 +53,7 @@ function main() {
   let total = 0;
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const batch = records.slice(i, i + BATCH_SIZE);
-    insertChunks(batch);
+    await insertChunks(batch);
     total += batch.length;
     console.log(
       `  [${Math.min(i + BATCH_SIZE, records.length)}/${records.length}] inserted`,
@@ -66,4 +66,7 @@ function main() {
   console.log("You can now safely archive or delete uploads.json.");
 }
 
-main();
+main().catch((error) => {
+  console.error(error.message || "Migration failed");
+  process.exitCode = 1;
+});

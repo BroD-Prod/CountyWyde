@@ -14,6 +14,9 @@ const {
 } = require("./src/controllers/uploadFilesControllers");
 const {
   login,
+  verifyTwoFactor,
+  resendTwoFactor,
+  requestAccountAccess,
   createAccount,
   deleteAccount,
   getAccount,
@@ -21,9 +24,15 @@ const {
   getCounties,
   getStates,
   updateAccount,
+  changePassword,
+  requestPasswordReset,
+  resetPasswordWithToken,
   getPendingAccounts,
   approveAccount,
   rejectAccount,
+  getPendingAccountRequests,
+  approveAccountRequest,
+  rejectAccountRequest,
   getSecurityOverview,
   clearSecurityState,
 } = require("./src/controllers/accountControllers");
@@ -35,8 +44,18 @@ const {
   getVideoFile,
 } = require("./src/controllers/uploadVideoControllers");
 
-const hostname = process.env.HOSTNAME;
-const port = process.env.PORT;
+const hostname = process.env.HOSTNAME || "127.0.0.1";
+const port = Number(process.env.PORT || 1337);
+const configuredFrontendOrigin = String(
+  process.env.FRONTEND_ORIGIN || process.env.ALLOWED_ORIGIN || "",
+).trim();
+const allowedOrigins = new Set(
+  [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    configuredFrontendOrigin,
+  ].filter(Boolean),
+);
 // --- AI Search Rate Limiter ---
 const searchRateWindow = new Map();
 const SEARCH_RATE_LIMIT = 5; // Max 5 searches
@@ -78,20 +97,24 @@ function checkSearchRateLimit(req, res) {
   return false; // Allowed
 }
 
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   const requestContext = security.beginRequest(req);
   const originalEnd = res.end;
   res.end = function patchedEnd(...args) {
     if (!res.__securityLogged) {
       res.__securityLogged = true;
-      security.completeRequest(req, res, requestContext);
+      void security.completeRequest(req, res, requestContext);
     }
     return originalEnd.apply(this, args);
   };
 
-  const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:3000";
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+  const requestOrigin = String(req.headers.origin || "").trim();
+  const resolvedOrigin = allowedOrigins.has(requestOrigin)
+    ? requestOrigin
+    : "http://localhost:3000";
+  res.setHeader("Access-Control-Allow-Origin", resolvedOrigin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader(
     "Access-Control-Allow-Methods",
@@ -99,7 +122,7 @@ const server = createServer((req, res) => {
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename",
+    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename, X-Video-Created-At",
   );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -112,7 +135,7 @@ const server = createServer((req, res) => {
     return;
   }
 
-  const blockInfo = security.isBlocked(req);
+  const blockInfo = await security.isBlocked(req);
   if (blockInfo) {
     res.statusCode = 403;
     res.setHeader(
@@ -125,7 +148,7 @@ const server = createServer((req, res) => {
     return;
   }
 
-  const rateLimit = security.checkRateLimit(req);
+  const rateLimit = await security.checkRateLimit(req);
   if (!rateLimit.allowed) {
     res.statusCode = rateLimit.statusCode || 429;
     if (rateLimit.retryAfterSeconds) {
@@ -139,7 +162,7 @@ const server = createServer((req, res) => {
 
   try {
     if (path === "/search" && req.method === "GET") {
-      getSearch(req, res);
+      await getSearch(req, res);
       return;
     }
 
@@ -147,33 +170,33 @@ const server = createServer((req, res) => {
       if (checkSearchRateLimit(req, res)) {
         return;
       }
-      postSearch(req, res);
+      await postSearch(req, res);
       return;
     }
 
     if (path === "/upload" && req.method === "POST") {
-      uploadFile(req, res);
+      await uploadFile(req, res);
       return;
     }
 
     if (path === "/upload" && req.method === "GET") {
-      getUpload(req, res);
+      await getUpload(req, res);
       return;
     }
 
     if (path === "/upload" && req.method === "DELETE") {
-      deleteUpload(req, res);
+      await deleteUpload(req, res);
       return;
     }
 
     if (path === "/upload/video" && req.method === "POST") {
-      uploadVideoFile(req, res);
+      await uploadVideoFile(req, res);
       return;
     }
 
     const videoStatusMatch = path.match(/^\/upload\/video\/([^/]+)\/status$/);
     if (videoStatusMatch && req.method === "GET") {
-      getVideoStatus(req, res, decodeURIComponent(videoStatusMatch[1]));
+      await getVideoStatus(req, res, decodeURIComponent(videoStatusMatch[1]));
       return;
     }
 
@@ -181,7 +204,7 @@ const server = createServer((req, res) => {
       /^\/upload\/video\/([^/]+)\/transcript$/,
     );
     if (videoTranscriptMatch && req.method === "GET") {
-      getVideoTranscript(req, res, decodeURIComponent(videoTranscriptMatch[1]));
+      await getVideoTranscript(req, res, decodeURIComponent(videoTranscriptMatch[1]));
       return;
     }
 
@@ -194,78 +217,123 @@ const server = createServer((req, res) => {
     if (req.method === "GET") {
       const documentMatch = path.match(/^\/documents\/([^/]+)\/original$/);
       if (documentMatch) {
-        getOriginalDocument(req, res, decodeURIComponent(documentMatch[1]));
+        await getOriginalDocument(req, res, decodeURIComponent(documentMatch[1]));
         return;
       }
 
       if (path === "/documents/") {
-        getOriginalDocumentBySource(req, res);
+        await getOriginalDocumentBySource(req, res);
         return;
       }
     }
 
     if (path === "/account/signup" && req.method === "POST") {
-      createAccount(req, res);
+      await createAccount(req, res);
+      return;
+    }
+
+    if (path === "/account/request-access" && req.method === "POST") {
+      await requestAccountAccess(req, res);
       return;
     }
 
     if (path === "/account/delete" && req.method === "DELETE") {
-      deleteAccount(req, res);
+      await deleteAccount(req, res);
       return;
     }
 
     if (path === "/account/login" && req.method === "POST") {
-      login(req, res);
+      await login(req, res);
+      return;
+    }
+
+    if (path === "/account/2fa/verify" && req.method === "POST") {
+      await verifyTwoFactor(req, res);
+      return;
+    }
+
+    if (path === "/account/2fa/resend" && req.method === "POST") {
+      await resendTwoFactor(req, res);
       return;
     }
 
     if (path === "/account/session" && req.method === "GET") {
-      getSession(req, res);
+      await getSession(req, res);
       return;
     }
 
     if (path === "/counties" && req.method === "GET") {
-      getCounties(req, res);
+      await getCounties(req, res);
       return;
     }
 
     if (path === "/states" && req.method === "GET") {
-      getStates(req, res);
+      await getStates(req, res);
       return;
     }
 
     if (path === "/account/update" && req.method === "PATCH") {
-      updateAccount(req, res);
+      await updateAccount(req, res);
+      return;
+    }
+
+    if (path === "/account/password" && req.method === "PATCH") {
+      await changePassword(req, res);
+      return;
+    }
+
+    if (path === "/account/password/forgot" && req.method === "POST") {
+      await requestPasswordReset(req, res);
+      return;
+    }
+
+    if (path === "/account/password/reset" && req.method === "POST") {
+      await resetPasswordWithToken(req, res);
       return;
     }
 
     if (path === "/account" && req.method === "GET") {
-      getAccount(req, res);
+      await getAccount(req, res);
       return;
     }
 
     if (path === "/admin/pending" && req.method === "GET") {
-      getPendingAccounts(req, res);
+      await getPendingAccounts(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests" && req.method === "GET") {
+      await getPendingAccountRequests(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests/approve" && req.method === "PATCH") {
+      await approveAccountRequest(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests/reject" && req.method === "DELETE") {
+      await rejectAccountRequest(req, res);
       return;
     }
 
     if (path === "/admin/approve" && req.method === "PATCH") {
-      approveAccount(req, res);
+      await approveAccount(req, res);
       return;
     }
 
     if (path === "/admin/reject" && req.method === "DELETE") {
-      rejectAccount(req, res);
+      await rejectAccount(req, res);
       return;
     }
 
     if (path === "/admin/security" && req.method === "GET") {
-      getSecurityOverview(req, res);
+      await getSecurityOverview(req, res);
       return;
     }
 
     if (path === "/admin/security" && req.method === "DELETE") {
-      clearSecurityState(req, res);
+      await clearSecurityState(req, res);
       return;
     }
     res.statusCode = 404;

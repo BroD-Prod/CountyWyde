@@ -21,7 +21,7 @@ async function main() {
     );
   }
 
-  const uploads = readChunks();
+  const uploads = await readChunks();
 
   const withEmbeddings = uploads.filter(
     (item) => Array.isArray(item.embedding) && item.embedding.length > 0,
