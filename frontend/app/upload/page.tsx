@@ -246,6 +246,7 @@ export default function Upload() {
         headers: {
           "Content-Type": videoFile.type,
           "x-file-name": encodeURIComponent(videoFile.name),
+          "x-video-created-at": new Date(videoFile.lastModified).toISOString(),
         },
         body: videoFile,
       });

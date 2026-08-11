@@ -77,6 +77,47 @@ function resolveVideoExtension({ videoPath, contentType }) {
   return ext;
 }
 
+function normalizeDateValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return null;
+  }
+
+  const asNumber = Number(raw);
+  if (Number.isFinite(asNumber) && asNumber > 0) {
+    const fromNumber = new Date(asNumber);
+    if (!Number.isNaN(fromNumber.getTime())) {
+      return fromNumber.toISOString();
+    }
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toISOString();
+}
+
+function resolveVideoCreatedAt({ headerValue, fileStat }) {
+  const fromHeader = normalizeDateValue(headerValue);
+  if (fromHeader) {
+    return fromHeader;
+  }
+
+  const birthtimeMs = Number(fileStat?.birthtimeMs);
+  if (Number.isFinite(birthtimeMs) && birthtimeMs > 0) {
+    return new Date(birthtimeMs).toISOString();
+  }
+
+  const mtimeMs = Number(fileStat?.mtimeMs);
+  if (Number.isFinite(mtimeMs) && mtimeMs > 0) {
+    return new Date(mtimeMs).toISOString();
+  }
+
+  return null;
+}
+
 function getVideoRecordPath(recordId) {
   return path.join(VIDEO_RECORDS_DIR, `${recordId}.json`);
 }
@@ -112,6 +153,7 @@ async function createVideoRecord({
   contentType,
   sourceName,
   size,
+  videoCreatedAt,
   county,
   state,
 }) {
@@ -123,6 +165,7 @@ async function createVideoRecord({
     contentType,
     sourceName,
     size,
+    videoCreatedAt,
     county,
     state,
     status: "uploaded",
@@ -146,6 +189,8 @@ async function validateVideoFile(videoPath) {
   if (stat.size <= 0) {
     throw new Error("Video file is empty");
   }
+
+  return stat;
 }
 
 async function extractAudioFromVideo(videoPath, audioPath) {
@@ -380,6 +425,7 @@ function buildTranscriptUploadRecords(
       duration: normalizedTranscript.duration,
       segmentCount: normalizedTranscript.segments.length,
       audioPath: record.audioPath,
+      videoCreatedAt: record.videoCreatedAt || null,
     },
     structured: {
       segments: normalizedTranscript.segments,
@@ -415,6 +461,7 @@ async function uploadVideoFile(req, res) {
   const incomingName = decodeFilenameHeader(
     req.headers["x-file-name"] || req.headers["x-upload-filename"],
   );
+  const createdAtHeader = req.headers["x-video-created-at"];
 
   let extension;
   try {
@@ -484,7 +531,7 @@ async function uploadVideoFile(req, res) {
     }
 
     try {
-      await validateVideoFile(filePath);
+      const fileStat = await validateVideoFile(filePath);
       const record = await createVideoRecord({
         id,
         videoPath: filePath,
@@ -493,7 +540,11 @@ async function uploadVideoFile(req, res) {
         sourceName: path
           .basename(incomingName || filename)
           .replace(/[\r\n"]/g, "_"),
-        size: bytesWritten,
+        size: Number(fileStat?.size) || bytesWritten,
+        videoCreatedAt: resolveVideoCreatedAt({
+          headerValue: createdAtHeader,
+          fileStat,
+        }),
         county: normalizeCounty(user.county),
         state: String(user.state_abbreviation || user.state_name || "").trim(),
       });
@@ -503,6 +554,7 @@ async function uploadVideoFile(req, res) {
         id: record.id,
         status: record.status,
         file: path.basename(record.videoPath),
+        videoCreatedAt: record.videoCreatedAt,
       });
 
       void processVideoFile(record.id);
@@ -607,6 +659,7 @@ async function getVideoStatus(req, res, recordId) {
       id: record.id,
       status: record.status,
       error: record.error,
+      videoCreatedAt: record.videoCreatedAt,
       updatedAt: record.updatedAt,
     });
   } catch (error) {
@@ -635,6 +688,7 @@ async function getVideoTranscript(req, res, recordId) {
       transcript: record.transcript,
       transcriptSummary: record.transcriptSummary,
       error: record.error,
+      videoCreatedAt: record.videoCreatedAt,
       updatedAt: record.updatedAt,
     });
   } catch (error) {

@@ -14,6 +14,9 @@ const {
 } = require("./src/controllers/uploadFilesControllers");
 const {
   login,
+  verifyTwoFactor,
+  resendTwoFactor,
+  requestAccountAccess,
   createAccount,
   deleteAccount,
   getAccount,
@@ -21,9 +24,15 @@ const {
   getCounties,
   getStates,
   updateAccount,
+  changePassword,
+  requestPasswordReset,
+  resetPasswordWithToken,
   getPendingAccounts,
   approveAccount,
   rejectAccount,
+  getPendingAccountRequests,
+  approveAccountRequest,
+  rejectAccountRequest,
   getSecurityOverview,
   clearSecurityState,
 } = require("./src/controllers/accountControllers");
@@ -35,8 +44,18 @@ const {
   getVideoFile,
 } = require("./src/controllers/uploadVideoControllers");
 
-const hostname = process.env.HOSTNAME;
-const port = process.env.PORT;
+const hostname = process.env.HOSTNAME || "127.0.0.1";
+const port = Number(process.env.PORT || 1337);
+const configuredFrontendOrigin = String(
+  process.env.FRONTEND_ORIGIN || process.env.ALLOWED_ORIGIN || "",
+).trim();
+const allowedOrigins = new Set(
+  [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    configuredFrontendOrigin,
+  ].filter(Boolean),
+);
 // --- AI Search Rate Limiter ---
 const searchRateWindow = new Map();
 const SEARCH_RATE_LIMIT = 5; // Max 5 searches
@@ -89,9 +108,13 @@ const server = createServer(async (req, res) => {
     return originalEnd.apply(this, args);
   };
 
-  const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "http://localhost:3000";
   res.setHeader("Content-Type", "application/json");
-  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+  const requestOrigin = String(req.headers.origin || "").trim();
+  const resolvedOrigin = allowedOrigins.has(requestOrigin)
+    ? requestOrigin
+    : "http://localhost:3000";
+  res.setHeader("Access-Control-Allow-Origin", resolvedOrigin);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Credentials", "true");
   res.setHeader(
     "Access-Control-Allow-Methods",
@@ -99,7 +122,7 @@ const server = createServer(async (req, res) => {
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename",
+    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename, X-Video-Created-At",
   );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -209,6 +232,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (path === "/account/request-access" && req.method === "POST") {
+      await requestAccountAccess(req, res);
+      return;
+    }
+
     if (path === "/account/delete" && req.method === "DELETE") {
       await deleteAccount(req, res);
       return;
@@ -216,6 +244,16 @@ const server = createServer(async (req, res) => {
 
     if (path === "/account/login" && req.method === "POST") {
       await login(req, res);
+      return;
+    }
+
+    if (path === "/account/2fa/verify" && req.method === "POST") {
+      await verifyTwoFactor(req, res);
+      return;
+    }
+
+    if (path === "/account/2fa/resend" && req.method === "POST") {
+      await resendTwoFactor(req, res);
       return;
     }
 
@@ -239,6 +277,21 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (path === "/account/password" && req.method === "PATCH") {
+      await changePassword(req, res);
+      return;
+    }
+
+    if (path === "/account/password/forgot" && req.method === "POST") {
+      await requestPasswordReset(req, res);
+      return;
+    }
+
+    if (path === "/account/password/reset" && req.method === "POST") {
+      await resetPasswordWithToken(req, res);
+      return;
+    }
+
     if (path === "/account" && req.method === "GET") {
       await getAccount(req, res);
       return;
@@ -246,6 +299,21 @@ const server = createServer(async (req, res) => {
 
     if (path === "/admin/pending" && req.method === "GET") {
       await getPendingAccounts(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests" && req.method === "GET") {
+      await getPendingAccountRequests(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests/approve" && req.method === "PATCH") {
+      await approveAccountRequest(req, res);
+      return;
+    }
+
+    if (path === "/admin/account-requests/reject" && req.method === "DELETE") {
+      await rejectAccountRequest(req, res);
       return;
     }
 

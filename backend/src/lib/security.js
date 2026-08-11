@@ -12,6 +12,7 @@ const ROUTE_LIMITS = {
   "GET:/account/session": 600,
   "POST:/account/login": 20,
   "POST:/account/signup": 20,
+  "POST:/account/request-access": 20,
   "DELETE:/account/delete": 30,
   "PATCH:/account/update": 60,
   "GET:/admin/pending": 30,
@@ -115,6 +116,10 @@ async function isBlocked(req) {
 }
 
 async function blockIp(ip, reason) {
+  if (process.env.NODE_ENV !== "production" && isLocalhostIp(ip)) {
+    return;
+  }
+
   const blockedUntil = Date.now() + BLOCK_DURATION_MS;
   await db
     .prepare(

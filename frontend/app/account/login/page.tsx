@@ -22,9 +22,11 @@ export default function Login() {
       method: "GET",
       credentials: "include",
     })
-      .then((res) => {
+      .then(async (res) => {
         if (res.ok) {
-          router.replace("/account");
+          const data = await res.json();
+          const mustChangePassword = Boolean(data?.user?.mustChangePassword);
+          router.replace(mustChangePassword ? "/account/change-password" : "/account");
           return;
         }
 
@@ -56,6 +58,18 @@ export default function Login() {
       const data = await res.json();
       if (!res.ok || data.error) {
         showAlert(data.error || "Login failed", "error");
+        return;
+      }
+
+      if (data.requiresTwoFactor) {
+        router.replace("/verify");
+        router.refresh();
+        return;
+      }
+
+      if (data.requiresPasswordChange) {
+        router.replace("/account/change-password");
+        router.refresh();
         return;
       }
 
@@ -109,17 +123,28 @@ export default function Login() {
             >
               Login
             </button>
+            <div className="text-center">
+              <a
+                href="/account/forgot-password"
+                className="text-sm font-semibold text-slate-600 transition hover:text-slate-900"
+              >
+                Forgot password?
+              </a>
+            </div>
           </form>
 
           <h2 className="mt-6 text-center text-sm text-slate-500">
-            Don&apos;t have an account?{" "}
+            Need access?{" "}
             <a
-              href="/account/signup"
+              href="/contact"
               className="font-semibold text-slate-700 hover:text-slate-900"
             >
-              Sign Up
+              Request access
             </a>
           </h2>
+          <p className="mt-2 text-center text-xs leading-6 text-slate-500">
+            Accounts are created after manual approval by the team.
+          </p>
         </div>
       </section>
     </main>
