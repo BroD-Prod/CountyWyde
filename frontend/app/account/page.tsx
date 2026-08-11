@@ -168,7 +168,13 @@ export default function Account() {
                 Save Changes
               </button>
               <a
-                href={`${API_BASE}/account/delete`}
+                href="/account/change-password"
+                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-semibold text-slate-900 transition hover:bg-slate-100"
+              >
+                Change Password
+              </a>
+              <a
+                href="/account/delete"
                 className="inline-flex flex-1 items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-semibold text-red-700 transition hover:bg-red-100"
               >
                 Delete Account

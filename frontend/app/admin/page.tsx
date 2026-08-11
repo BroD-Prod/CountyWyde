@@ -11,6 +11,17 @@ type PendingAccount = {
   state_abbreviation: string;
 };
 
+type AccountRequest = {
+  id: number;
+  full_name: string;
+  email: string;
+  county: string;
+  state_name: string;
+  state_abbreviation: string;
+  notes: string | null;
+  created_at: number;
+};
+
 type BlockedIp = {
   ip: string;
   reason: string;
@@ -50,6 +61,7 @@ function escapeIfNeeded(value: unknown): string {
 export default function AdminPage() {
   const [adminKey, setAdminKey] = useState("");
   const [pendingAccounts, setPendingAccounts] = useState<PendingAccount[]>([]);
+  const [accountRequests, setAccountRequests] = useState<AccountRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [securityLoading, setSecurityLoading] = useState(false);
   const [keyError, setKeyError] = useState(false);
@@ -62,6 +74,36 @@ export default function AdminPage() {
   const { showAlert } = useAlert();
 
   const pendingCount = useMemo(() => pendingAccounts.length, [pendingAccounts]);
+  const requestCount = useMemo(() => accountRequests.length, [accountRequests]);
+
+  const loadAccountRequests = useCallback(
+    async (overrideKey?: string) => {
+      const key = (overrideKey || adminKey).trim();
+      if (!key) {
+        return;
+      }
+
+      const response = await fetch(`${API_BASE}/admin/account-requests`, {
+        headers: {
+          "X-Admin-Key": key,
+        },
+      });
+
+      if (response.status === 403) {
+        setKeyError(true);
+        setAccountRequests([]);
+        return;
+      }
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = (await response.json()) as { requests?: AccountRequest[] };
+      setAccountRequests(Array.isArray(data.requests) ? data.requests : []);
+    },
+    [adminKey],
+  );
 
   useEffect(() => {
     const savedKey = sessionStorage.getItem(ADMIN_KEY_STORAGE);
@@ -79,6 +121,7 @@ export default function AdminPage() {
           if (response.status === 403) {
             setKeyError(true);
             setPendingAccounts([]);
+            setAccountRequests([]);
             showAlert("Access denied. Wrong admin key.", "error");
             return;
           }
@@ -92,6 +135,7 @@ export default function AdminPage() {
             pending?: PendingAccount[];
           };
           setPendingAccounts(Array.isArray(data.pending) ? data.pending : []);
+          await loadAccountRequests(savedKey);
           await loadSecurity(savedKey);
         } catch {
           return;
@@ -100,7 +144,7 @@ export default function AdminPage() {
         }
       })();
     }
-  }, []);
+  }, [loadAccountRequests, showAlert]);
 
   const saveKey = useCallback((value: string) => {
     setAdminKey(value);
@@ -127,6 +171,7 @@ export default function AdminPage() {
         setKeyError(true);
         showAlert("Access denied. Wrong admin key.", "error");
         setPendingAccounts([]);
+        setAccountRequests([]);
         return;
       }
 
@@ -138,6 +183,7 @@ export default function AdminPage() {
 
       const data = (await response.json()) as { pending?: PendingAccount[] };
       setPendingAccounts(Array.isArray(data.pending) ? data.pending : []);
+      await loadAccountRequests(key);
       setKeyError(false);
       showAlert("Pending accounts loaded.", "success");
       await loadSecurity(key);
@@ -146,7 +192,7 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [adminKey, showAlert]);
+  }, [adminKey, loadAccountRequests, showAlert]);
 
   const loadSecurity = useCallback(
     async (overrideKey?: string) => {
@@ -285,6 +331,63 @@ export default function AdminPage() {
     [adminKey, showAlert],
   );
 
+  const requestAction = useCallback(
+    async (
+      url: string,
+      id: number,
+      method: "PATCH" | "DELETE",
+      successMessage: string,
+      errorMessage: string,
+    ) => {
+      const key = adminKey.trim();
+      if (!key) {
+        showAlert("Please enter your admin key first.", "error");
+        return;
+      }
+
+      setSelectedId(id);
+      try {
+        const response = await fetch(`${API_BASE}${url}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Admin-Key": key,
+          },
+          body: JSON.stringify({ id }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 403) {
+          setKeyError(true);
+          showAlert("Access denied. Wrong admin key.", "error");
+          return;
+        }
+
+        if (!response.ok) {
+          showAlert(data.error || errorMessage, "error");
+          return;
+        }
+
+        setAccountRequests((prev) => prev.filter((request) => request.id !== id));
+        setKeyError(false);
+
+        if (data?.account?.temporaryPassword) {
+          showAlert(
+            `${successMessage} Temporary password: ${data.account.temporaryPassword}`,
+            "success",
+          );
+        } else {
+          showAlert(successMessage, "success");
+        }
+      } catch {
+        showAlert(errorMessage, "error");
+      } finally {
+        setSelectedId(null);
+      }
+    },
+    [adminKey, showAlert],
+  );
+
   return (
     <main className="min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -390,6 +493,87 @@ export default function AdminPage() {
                       className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="overflow-hidden rounded-4xl border border-white/10 bg-white/92 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl">
+          <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sm:px-8">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">
+                Account Requests
+              </h2>
+              <p className="text-sm text-slate-500">
+                {requestCount} request(s) submitted from Contact Us
+              </p>
+            </div>
+          </div>
+
+          {accountRequests.length === 0 ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500 sm:px-8">
+              No pending account requests.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {accountRequests.map((request) => (
+                <div
+                  key={request.id}
+                  className="flex flex-col gap-4 px-6 py-5 transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between sm:px-8"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-semibold text-slate-900">
+                      {escapeIfNeeded(request.full_name)}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {escapeIfNeeded(request.email)}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {escapeIfNeeded(request.county)}, {" "}
+                      {escapeIfNeeded(request.state_abbreviation)} - {" "}
+                      {escapeIfNeeded(request.state_name)}
+                    </p>
+                    {request.notes ? (
+                      <p className="mt-1 text-sm text-slate-500">
+                        Notes: {escapeIfNeeded(request.notes)}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={selectedId === request.id}
+                      onClick={() =>
+                        void requestAction(
+                          "/admin/account-requests/approve",
+                          request.id,
+                          "PATCH",
+                          "Request approved and account created.",
+                          "Failed to approve request.",
+                        )
+                      }
+                      className="rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      disabled={selectedId === request.id}
+                      onClick={() =>
+                        void requestAction(
+                          "/admin/account-requests/reject",
+                          request.id,
+                          "DELETE",
+                          "Request denied.",
+                          "Failed to deny request.",
+                        )
+                      }
+                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Deny
                     </button>
                   </div>
                 </div>

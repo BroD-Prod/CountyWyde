@@ -78,7 +78,8 @@ async function getAuthenticatedUser(req, options = {}) {
     return (
       (await db
         .prepare(
-          `SELECT a.id, a.username, a.county, st.name AS state_name, st.abbreviation AS state_abbreviation
+          `SELECT a.id, a.username, a.county, a.must_change_password,
+                 st.name AS state_name, st.abbreviation AS state_abbreviation
              FROM sessions s
              JOIN accounts a ON a.id = s.user_id
              JOIN states st ON st.id = a.state_id
@@ -91,7 +92,7 @@ async function getAuthenticatedUser(req, options = {}) {
   return (
     (await db
       .prepare(
-        "SELECT a.id, a.username, a.county FROM sessions s JOIN accounts a ON a.id = s.user_id WHERE s.token = ? AND s.expires_at > ?",
+        "SELECT a.id, a.username, a.county, a.must_change_password FROM sessions s JOIN accounts a ON a.id = s.user_id WHERE s.token = ? AND s.expires_at > ?",
       )
       .get(tokenHash, now)) || null
   );

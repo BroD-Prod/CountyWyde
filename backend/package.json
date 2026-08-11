@@ -15,6 +15,7 @@
     "test": "playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.884.0",
     "@google/generative-ai": "^0.24.1",
     "@zilliz/milvus2-sdk-node": "^2.6.17",
     "bcrypt": "^6.0.0",
