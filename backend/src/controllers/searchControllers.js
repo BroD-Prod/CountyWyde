@@ -47,6 +47,64 @@ function tokenize(text) {
     .filter(Boolean);
 }
 
+const MONTH_NUMBERS = new Map([
+  ["january", "01"],
+  ["february", "02"],
+  ["march", "03"],
+  ["april", "04"],
+  ["may", "05"],
+  ["june", "06"],
+  ["july", "07"],
+  ["august", "08"],
+  ["september", "09"],
+  ["october", "10"],
+  ["november", "11"],
+  ["december", "12"],
+]);
+
+function extractDateHints(text) {
+  const value = String(text || "").toLowerCase();
+  const hints = new Set();
+
+  for (const [month, monthNumber] of MONTH_NUMBERS) {
+    const monthDay = new RegExp(`\\b${month}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`, "g");
+    for (const match of value.matchAll(monthDay)) {
+      hints.add(`${monthNumber}-${String(Number(match[1])).padStart(2, "0")}`);
+    }
+
+    const dayMonth = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${month}\\b`, "g");
+    for (const match of value.matchAll(dayMonth)) {
+      hints.add(`${monthNumber}-${String(Number(match[1])).padStart(2, "0")}`);
+    }
+
+    const compactMonthDay = new RegExp(`${month}(\\d{1,2})(?!\\d)`, "g");
+    for (const match of value.matchAll(compactMonthDay)) {
+      hints.add(`${monthNumber}-${String(Number(match[1])).padStart(2, "0")}`);
+    }
+  }
+
+  return hints;
+}
+
+function filterRecordsByDateIntent(records, prompt) {
+  const requestedDates = extractDateHints(prompt);
+  if (requestedDates.size === 0) {
+    return records;
+  }
+
+  const matches = records.filter((record) => {
+    const sourceText = [
+      record?.source,
+      record?.originalFileName,
+      record?.metadata?.sourceName,
+    ].join(" ");
+    const sourceDates = extractDateHints(sourceText);
+    return [...requestedDates].some((date) => sourceDates.has(date));
+  });
+
+  return matches.length > 0 ? matches : records;
+}
+
 function getRecordTimestamp(record) {
   const candidates = [
     record?.createdAt,
@@ -124,10 +182,15 @@ function rankByOverlap(records, prompt, max = 5) {
         }
       }
 
-      return { record, score: score + getRecencyBoost(record, records) };
+      return { record, score };
     })
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return getRecencyBoost(b.record, records) - getRecencyBoost(a.record, records);
+    })
     .slice(0, max);
 }
 
@@ -143,12 +206,15 @@ function rankByVector(records, queryEmbedding, max = 5) {
   return records
     .map((record) => ({
       record,
-      score:
-        cosineSimilarity(record.embedding, queryEmbedding) +
-        getRecencyBoost(record, records),
+      score: cosineSimilarity(record.embedding, queryEmbedding),
     }))
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return getRecencyBoost(b.record, records) - getRecencyBoost(a.record, records);
+    })
     .slice(0, max);
 }
 
@@ -201,7 +267,6 @@ function rerankMatches(vectorMatches, lexicalMatches, prompt, max = 5) {
       item.score += (overlap / promptTokens.length) * 0.75;
     }
 
-    item.score += getRecencyBoost(item.record, allRecords);
   }
 
   return Array.from(scores.values())
@@ -212,7 +277,10 @@ function rerankMatches(vectorMatches, lexicalMatches, prompt, max = 5) {
       if (b.promptCoverage !== a.promptCoverage) {
         return b.promptCoverage - a.promptCoverage;
       }
-      return (b.vectorScore || 0) - (a.vectorScore || 0);
+      if ((b.vectorScore || 0) !== (a.vectorScore || 0)) {
+        return (b.vectorScore || 0) - (a.vectorScore || 0);
+      }
+      return getRecencyBoost(b.record, allRecords) - getRecencyBoost(a.record, allRecords);
     })
     .slice(0, max);
 }
@@ -230,7 +298,9 @@ async function rankVectorWithMilvus(records, queryEmbedding, county, state, max)
 }
 
 async function rankHybrid(records, prompt, max = 5, { county, state } = {}) {
-  const lexicalMatches = rankByOverlap(records, prompt, MAX_LEXICAL * 2);
+  const dateScopedRecords = filterRecordsByDateIntent(records, prompt);
+  const lexicalMatches = rankByOverlap(dateScopedRecords, prompt, MAX_LEXICAL * 2);
+  const retrievalLimit = Math.max(max * 3, MAX_EVIDENCE_CHUNKS * 3);
 
   let queryEmbedding = null;
   let vectorMatches = [];
@@ -238,38 +308,43 @@ async function rankHybrid(records, prompt, max = 5, { county, state } = {}) {
     queryEmbedding = await embedPrompt(prompt);
     if (county && state) {
       vectorMatches = await rankVectorWithMilvus(
-        records,
+        dateScopedRecords,
         queryEmbedding,
         county,
         state,
         MAX_VECTOR * 2
       );
     } else {
-      vectorMatches = rankByVector(records, queryEmbedding, MAX_VECTOR * 2);
+      vectorMatches = rankByVector(dateScopedRecords, queryEmbedding, MAX_VECTOR * 2);
     }
   } catch {
     queryEmbedding = null;
   }
 
   if (!queryEmbedding) {
-    return lexicalMatches.slice(0, max).map((entry, index) => ({
+    return lexicalMatches.slice(0, retrievalLimit).map((entry, index) => ({
       record: entry.record,
-      score: 1 / (RRF_K + index + 1) + getRecencyBoost(entry.record, records),
+      score: 1 / (RRF_K + index + 1),
       vectorScore: 0,
       lexicalScore: entry.score,
       promptCoverage: entry.score,
     }));
   }
 
-  const reranked = rerankMatches(vectorMatches, lexicalMatches, prompt, max);
+  const reranked = rerankMatches(
+    vectorMatches,
+    lexicalMatches,
+    prompt,
+    retrievalLimit,
+  );
 
   if (reranked.length > 0) {
     return reranked;
   }
 
-  return lexicalMatches.slice(0, max).map((entry, index) => ({
+  return lexicalMatches.slice(0, retrievalLimit).map((entry, index) => ({
     record: entry.record,
-    score: 1 / (RRF_K + index + 1) + getRecencyBoost(entry.record, records),
+    score: 1 / (RRF_K + index + 1),
     vectorScore: 0,
     lexicalScore: entry.score,
     promptCoverage: entry.score,
@@ -285,9 +360,28 @@ function selectTopChunksPerSource(
   const countsBySource = new Map();
 
   for (const match of matches) {
+    if (selected.length >= maxTotal) {
+      break;
+    }
+
+    const record = match.record || match;
+    const sourceKey = String(record?.source || "").trim().toLowerCase();
+    if (!sourceKey || countsBySource.has(sourceKey)) {
+      continue;
+    }
+
+    countsBySource.set(sourceKey, 1);
+    selected.push(match);
+  }
+
+  for (const match of matches) {
     const record = match.record || match;
     const sourceKey = String(record?.source || "").trim().toLowerCase();
     if (!sourceKey) {
+      continue;
+    }
+
+    if (selected.some((item) => String((item.record || item)?.id) === String(record?.id))) {
       continue;
     }
 
