@@ -10,6 +10,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+require("dotenv").config();
 
 // Bootstrap db before uploadStore so the table is created first
 require("../lib/db");
