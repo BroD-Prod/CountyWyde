@@ -391,10 +391,16 @@ async function initializeDb() {
   await runMigrations({ db: migrationDb, migrations });
 }
 
-const ready = initializeDb();
+const ready = initializeDb().catch((error) => {
+  console.error("Database initialization failed:", error?.message || error);
+  return false;
+});
 
 async function query(sql, params = []) {
-  await ready;
+  const initialized = await ready;
+  if (initialized === false) {
+    throw new Error("Database is unavailable");
+  }
   return rawQuery(sql, params);
 }
 
@@ -429,7 +435,10 @@ function prepare(sql) {
 }
 
 async function transaction(work) {
-  await ready;
+  const initialized = await ready;
+  if (initialized === false) {
+    throw new Error("Database is unavailable");
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

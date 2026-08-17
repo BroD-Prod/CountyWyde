@@ -6,7 +6,20 @@ const { readChunks } = require("../lib/uploadStore");
 const helperController = require("./helperController");
 const { normalizeCounty, isRegisteredState } = require("../lib/countyRegistry");
 
-const genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+let genAi = null;
+
+function getGenAiClient() {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("Missing GEMINI_API_KEY");
+  }
+
+  if (!genAi) {
+    genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  }
+
+  return genAi;
+}
+
 const MAX_JSON_BYTES = 1 * 1024 * 1024;
 const RRF_K = 60;
 const MAX_LEXICAL = 10;
@@ -34,6 +47,67 @@ function tokenize(text) {
     .filter(Boolean);
 }
 
+function getRecordTimestamp(record) {
+  const candidates = [
+    record?.createdAt,
+    record?.originalStoredAt,
+    record?.metadata?.createdAt,
+    record?.metadata?.videoCreatedAt,
+    record?.videoCreatedAt,
+    record?.record?.createdAt,
+    record?.record?.metadata?.videoCreatedAt,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+
+    const date = new Date(candidate);
+    if (!Number.isNaN(date.getTime())) {
+      return date.getTime();
+    }
+  }
+
+  return null;
+}
+
+function getMostRecentTimestamp(records) {
+  const timestamps = (Array.isArray(records) ? records : [])
+    .map((record) => getRecordTimestamp(record))
+    .filter((value) => Number.isFinite(value));
+
+  if (timestamps.length === 0) {
+    return null;
+  }
+
+  return Math.max(...timestamps);
+}
+
+function getRecencyBoost(record, records = []) {
+  const timestamp = getRecordTimestamp(record);
+  if (!Number.isFinite(timestamp)) {
+    return 0;
+  }
+
+  const newestTimestamp = getMostRecentTimestamp(records);
+  if (!Number.isFinite(newestTimestamp)) {
+    return 0;
+  }
+
+  const timestamps = (Array.isArray(records) ? records : [])
+    .map((item) => getRecordTimestamp(item))
+    .filter((value) => Number.isFinite(value));
+
+  if (timestamps.length <= 1) {
+    return 0.35;
+  }
+
+  const oldestTimestamp = Math.min(...timestamps);
+  const freshnessWindow = Math.max(1, newestTimestamp - oldestTimestamp);
+  const ageFromNewest = newestTimestamp - timestamp;
+  const normalizedAge = Math.min(1, ageFromNewest / freshnessWindow);
+  return (1 - normalizedAge) * 0.85;
+}
+
 function rankByOverlap(records, prompt, max = 5) {
   const promptTokens = new Set(tokenize(prompt));
 
@@ -50,7 +124,7 @@ function rankByOverlap(records, prompt, max = 5) {
         }
       }
 
-      return { record, score };
+      return { record, score: score + getRecencyBoost(record, records) };
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
@@ -69,7 +143,9 @@ function rankByVector(records, queryEmbedding, max = 5) {
   return records
     .map((record) => ({
       record,
-      score: cosineSimilarity(record.embedding, queryEmbedding),
+      score:
+        cosineSimilarity(record.embedding, queryEmbedding) +
+        getRecencyBoost(record, records),
     }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
@@ -106,6 +182,8 @@ function rerankMatches(vectorMatches, lexicalMatches, prompt, max = 5) {
   vectorMatches.forEach((entry, index) => upsert(entry, "vector", index));
   lexicalMatches.forEach((entry, index) => upsert(entry, "lexical", index));
 
+  const allRecords = [...vectorMatches, ...lexicalMatches].map((entry) => entry.record);
+
   for (const item of scores.values()) {
     const recordTokens = new Set(
       tokenize(`${item.record.source || ""} ${item.record.text || ""}`)
@@ -122,6 +200,8 @@ function rerankMatches(vectorMatches, lexicalMatches, prompt, max = 5) {
     if (promptTokens.length > 0) {
       item.score += (overlap / promptTokens.length) * 0.75;
     }
+
+    item.score += getRecencyBoost(item.record, allRecords);
   }
 
   return Array.from(scores.values())
@@ -174,7 +254,7 @@ async function rankHybrid(records, prompt, max = 5, { county, state } = {}) {
   if (!queryEmbedding) {
     return lexicalMatches.slice(0, max).map((entry, index) => ({
       record: entry.record,
-      score: 1 / (RRF_K + index + 1),
+      score: 1 / (RRF_K + index + 1) + getRecencyBoost(entry.record, records),
       vectorScore: 0,
       lexicalScore: entry.score,
       promptCoverage: entry.score,
@@ -189,7 +269,7 @@ async function rankHybrid(records, prompt, max = 5, { county, state } = {}) {
 
   return lexicalMatches.slice(0, max).map((entry, index) => ({
     record: entry.record,
-    score: 1 / (RRF_K + index + 1),
+    score: 1 / (RRF_K + index + 1) + getRecencyBoost(entry.record, records),
     vectorScore: 0,
     lexicalScore: entry.score,
     promptCoverage: entry.score,
@@ -321,12 +401,13 @@ function normalizeSegmentStartScale(segments) {
 }
 
 function buildVideoTranscriptTimestampLink(item, answerText) {
-  if (!item || String(item?.parsedType || "").toLowerCase() !== "whisper_transcript") {
+  const record = item?.record || item;
+  if (!record || String(record?.parsedType || "").toLowerCase() !== "whisper_transcript") {
     return null;
   }
 
-  const structuredSegments = Array.isArray(item?.record?.structured?.segments)
-    ? item.record.structured.segments
+  const structuredSegments = Array.isArray(record?.structured?.segments)
+    ? record.structured.segments
     : [];
   const scaledSegments = normalizeSegmentStartScale(structuredSegments);
   const normalizedSegments = scaledSegments
@@ -384,7 +465,7 @@ function buildVideoTranscriptTimestampLink(item, answerText) {
     return null;
   }
 
-  const videoId = String(item?.record?.metadata?.videoId || item?.videoId || "").trim();
+  const videoId = String(record?.metadata?.videoId || item?.videoId || "").trim();
 
   return {
     timestamp: formatTranscriptTimestamp(startSeconds),
@@ -465,7 +546,7 @@ async function postSearch(req, res) {
     const evidenceMatches = selectTopChunksPerSource(rankedMatches);
     const evidenceItems = buildEvidenceItems(evidenceMatches);
 
-    const model = genAi.getGenerativeModel({
+    const model = getGenAiClient().getGenerativeModel({
       model: "gemini-2.5-flash",
       systemInstruction: `You are an expert assistant tasked with rewriting and summarizing source text into clean, professional, and completely original phrasing.
 
@@ -509,12 +590,12 @@ async function postSearch(req, res) {
         parsedType: item.parsedType || null,
         ...(videoTimestampLink
           ? {
-              timestamp: videoTimestampLink.timestamp,
-              timestampSeconds: videoTimestampLink.timestampSeconds,
-              transcriptSnippet: videoTimestampLink.transcriptSnippet,
-              transcriptSegments: videoTimestampLink.transcriptSegments,
-              videoId: videoTimestampLink.videoId,
-            }
+            timestamp: videoTimestampLink.timestamp,
+            timestampSeconds: videoTimestampLink.timestampSeconds,
+            transcriptSnippet: videoTimestampLink.transcriptSnippet,
+            transcriptSegments: videoTimestampLink.transcriptSegments,
+            videoId: videoTimestampLink.videoId,
+          }
           : {}),
       };
     });

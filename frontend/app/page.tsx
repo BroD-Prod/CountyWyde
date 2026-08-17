@@ -154,33 +154,33 @@ export default function Home() {
 
       const rawSources: SearchSource[] = Array.isArray(resultData.sources)
         ? resultData.sources.map((s: SearchSource) => ({
-            id: String(s.id || ""),
-            source: String(s.source || "Unknown source"),
-            documentId: s.documentId ? String(s.documentId) : null,
-            originalFileName: s.originalFileName
-              ? String(s.originalFileName)
-              : null,
-            parsedType: s.parsedType ? String(s.parsedType) : null,
-            videoId: s.videoId ? String(s.videoId) : null,
-            timestamp: s.timestamp ? String(s.timestamp) : null,
-            timestampSeconds:
-              s.timestampSeconds != null ? Number(s.timestampSeconds) : null,
-            transcriptSnippet: s.transcriptSnippet
-              ? String(s.transcriptSnippet)
-              : null,
-            transcriptSegments: Array.isArray(s.transcriptSegments)
-              ? s.transcriptSegments.map(
-                  (segment: {
-                    start?: number | null;
-                    text?: string | null;
-                  }) => ({
-                    start: segment.start != null ? Number(segment.start) : null,
-                    text: segment.text ? String(segment.text) : null,
-                  }),
-                )
-              : [],
-            excerpt: s.excerpt ? String(s.excerpt) : null,
-          }))
+          id: String(s.id || ""),
+          source: String(s.source || "Unknown source"),
+          documentId: s.documentId ? String(s.documentId) : null,
+          originalFileName: s.originalFileName
+            ? String(s.originalFileName)
+            : null,
+          parsedType: s.parsedType ? String(s.parsedType) : null,
+          videoId: s.videoId ? String(s.videoId) : null,
+          timestamp: s.timestamp ? String(s.timestamp) : null,
+          timestampSeconds:
+            s.timestampSeconds != null ? Number(s.timestampSeconds) : null,
+          transcriptSnippet: s.transcriptSnippet
+            ? String(s.transcriptSnippet)
+            : null,
+          transcriptSegments: Array.isArray(s.transcriptSegments)
+            ? s.transcriptSegments.map(
+              (segment: {
+                start?: number | null;
+                text?: string | null;
+              }) => ({
+                start: segment.start != null ? Number(segment.start) : null,
+                text: segment.text ? String(segment.text) : null,
+              }),
+            )
+            : [],
+          excerpt: s.excerpt ? String(s.excerpt) : null,
+        }))
         : [];
 
       // Group and merge sources strictly by source filename
@@ -323,18 +323,18 @@ export default function Home() {
 
                   const previewSrc = source.documentId
                     ? `${API_URL}/documents/${encodeURIComponent(
-                        source.documentId,
-                      )}/original`
+                      source.documentId,
+                    )}/original`
                     : `${API_URL}/documents/original?source=${encodeURIComponent(
-                        source.source,
-                      )}&county=${encodeURIComponent(
-                        county,
-                      )}&state=${encodeURIComponent(state)}`;
+                      source.source,
+                    )}&county=${encodeURIComponent(
+                      county,
+                    )}&state=${encodeURIComponent(state)}`;
 
                   const downloadVideoSrc = canOpenVideo
                     ? `${API_URL}/upload/video/${encodeURIComponent(
-                        String(source.videoId),
-                      )}/original`
+                      String(source.videoId),
+                    )}/original`
                     : "";
 
                   return (
@@ -357,9 +357,8 @@ export default function Home() {
                                   {source.transcriptSegments.map(
                                     (segment, index) => (
                                       <li
-                                        key={`${
-                                          segment.start ?? index
-                                        }-${index}`}
+                                        key={`${segment.start ?? index
+                                          }-${index}`}
                                       >
                                         <span className="font-semibold text-slate-600">
                                           {formatTimestamp(segment.start)}
