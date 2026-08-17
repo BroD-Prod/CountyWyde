@@ -399,7 +399,7 @@ export default function Home() {
                             }
                             className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
                           >
-                            Download Video
+                            Open Video
                           </button>
                         )}
                       </div>
