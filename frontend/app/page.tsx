@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAlert } from "./components/AlertProvider";
 import Loading from "./components/Loading";
 
@@ -75,6 +76,7 @@ function formatTimestamp(seconds: number | null | undefined): string {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
 
 export default function Home() {
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
   const [result, setResult] = useState("");
   const [sources, setSources] = useState<SearchSource[]>([]);
@@ -86,11 +88,31 @@ export default function Home() {
     { name: string; abbreviation: string }[]
   >([]);
   const { showAlert } = useAlert();
+  const isEmbed = searchParams.get("embed") === "1";
+
+  useEffect(() => {
+    const urlState = searchParams.get("state") ?? "";
+    const urlCounty = searchParams.get("county") ?? "";
+
+    if (urlState) {
+      setState(urlState);
+    } else {
+      setState("");
+    }
+
+    if (urlCounty) {
+      setCounty(urlCounty);
+    } else if (!urlState) {
+      setCounty("");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!state) {
       setCounties([]);
-      setCounty("");
+      if (!searchParams.get("county")) {
+        setCounty("");
+      }
       return;
     }
 
@@ -99,12 +121,19 @@ export default function Home() {
       .then((data) => {
         if (Array.isArray(data.counties)) {
           setCounties(data.counties);
+
+          const urlCounty = searchParams.get("county") ?? "";
+          if (urlCounty && data.counties.includes(urlCounty)) {
+            setCounty(urlCounty);
+          } else if (!urlCounty) {
+            setCounty("");
+          }
         }
       })
       .catch(() => {
         setCounties([]);
       });
-  }, [state]);
+  }, [state, searchParams]);
 
   useEffect(() => {
     fetch(`${API_URL}/states`)
@@ -154,33 +183,33 @@ export default function Home() {
 
       const rawSources: SearchSource[] = Array.isArray(resultData.sources)
         ? resultData.sources.map((s: SearchSource) => ({
-            id: String(s.id || ""),
-            source: String(s.source || "Unknown source"),
-            documentId: s.documentId ? String(s.documentId) : null,
-            originalFileName: s.originalFileName
-              ? String(s.originalFileName)
-              : null,
-            parsedType: s.parsedType ? String(s.parsedType) : null,
-            videoId: s.videoId ? String(s.videoId) : null,
-            timestamp: s.timestamp ? String(s.timestamp) : null,
-            timestampSeconds:
-              s.timestampSeconds != null ? Number(s.timestampSeconds) : null,
-            transcriptSnippet: s.transcriptSnippet
-              ? String(s.transcriptSnippet)
-              : null,
-            transcriptSegments: Array.isArray(s.transcriptSegments)
-              ? s.transcriptSegments.map(
-                  (segment: {
-                    start?: number | null;
-                    text?: string | null;
-                  }) => ({
-                    start: segment.start != null ? Number(segment.start) : null,
-                    text: segment.text ? String(segment.text) : null,
-                  }),
-                )
-              : [],
-            excerpt: s.excerpt ? String(s.excerpt) : null,
-          }))
+          id: String(s.id || ""),
+          source: String(s.source || "Unknown source"),
+          documentId: s.documentId ? String(s.documentId) : null,
+          originalFileName: s.originalFileName
+            ? String(s.originalFileName)
+            : null,
+          parsedType: s.parsedType ? String(s.parsedType) : null,
+          videoId: s.videoId ? String(s.videoId) : null,
+          timestamp: s.timestamp ? String(s.timestamp) : null,
+          timestampSeconds:
+            s.timestampSeconds != null ? Number(s.timestampSeconds) : null,
+          transcriptSnippet: s.transcriptSnippet
+            ? String(s.transcriptSnippet)
+            : null,
+          transcriptSegments: Array.isArray(s.transcriptSegments)
+            ? s.transcriptSegments.map(
+              (segment: {
+                start?: number | null;
+                text?: string | null;
+              }) => ({
+                start: segment.start != null ? Number(segment.start) : null,
+                text: segment.text ? String(segment.text) : null,
+              }),
+            )
+            : [],
+          excerpt: s.excerpt ? String(s.excerpt) : null,
+        }))
         : [];
 
       // Group and merge sources strictly by source filename
@@ -239,19 +268,43 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
-      <section className="mx-auto w-full max-w-2xl">
-        <div className="overflow-hidden rounded-4xl border border-white/10 bg-white/92 p-6 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
-          <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-slate-700 via-slate-500 to-slate-700" />
-          <div className="mb-6">
-            <h2 className="mt-2 text-2xl font-semibold text-slate-900">
-              Search CountyWyde
-            </h2>
-          </div>
+    <main
+      className={
+        isEmbed
+          ? "min-h-screen bg-white px-3 py-4 text-slate-900"
+          : "min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8"
+      }
+    >
+      <section
+        className={
+          isEmbed ? "mx-auto w-full max-w-md" : "mx-auto w-full max-w-2xl"
+        }
+      >
+        <div
+          className={
+            isEmbed
+              ? "overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              : "overflow-hidden rounded-4xl border border-white/10 bg-white/92 p-6 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8"
+          }
+        >
+          {!isEmbed && (
+            <>
+              <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-slate-700 via-slate-500 to-slate-700" />
+              <div className="mb-6">
+                <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+                  Search CountyWyde
+                </h2>
+              </div>
+            </>
+          )}
 
           <div className="space-y-4">
             <select
-              className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              className={
+                isEmbed
+                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              }
               value={state}
               onChange={(e) => {
                 setState(e.target.value);
@@ -267,7 +320,11 @@ export default function Home() {
             </select>
 
             <select
-              className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              className={
+                isEmbed
+                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              }
               value={county}
               onChange={(e) => setCounty(e.target.value)}
               disabled={!state}
@@ -281,7 +338,11 @@ export default function Home() {
             </select>
 
             <input
-              className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              className={
+                isEmbed
+                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              }
               placeholder="Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -293,7 +354,11 @@ export default function Home() {
             />
 
             <button
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+              className={
+                isEmbed
+                  ? "flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                  : "flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+              }
               onClick={handleSearch}
               disabled={isSearching}
             >
@@ -301,7 +366,7 @@ export default function Home() {
             </button>
           </div>
 
-          {result && (
+          {!isEmbed && result && (
             <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm leading-6 text-slate-800 shadow-sm">
               <p className="font-semibold text-slate-700">Result:</p>
               <p className="whitespace-pre-wrap">{result}</p>
@@ -323,18 +388,18 @@ export default function Home() {
 
                   const previewSrc = source.documentId
                     ? `${API_URL}/documents/${encodeURIComponent(
-                        source.documentId,
-                      )}/original`
+                      source.documentId,
+                    )}/original`
                     : `${API_URL}/documents/original?source=${encodeURIComponent(
-                        source.source,
-                      )}&county=${encodeURIComponent(
-                        county,
-                      )}&state=${encodeURIComponent(state)}`;
+                      source.source,
+                    )}&county=${encodeURIComponent(
+                      county,
+                    )}&state=${encodeURIComponent(state)}`;
 
                   const downloadVideoSrc = canOpenVideo
                     ? `${API_URL}/upload/video/${encodeURIComponent(
-                        String(source.videoId),
-                      )}/original`
+                      String(source.videoId),
+                    )}/original`
                     : "";
 
                   return (
@@ -357,9 +422,8 @@ export default function Home() {
                                   {source.transcriptSegments.map(
                                     (segment, index) => (
                                       <li
-                                        key={`${
-                                          segment.start ?? index
-                                        }-${index}`}
+                                        key={`${segment.start ?? index
+                                          }-${index}`}
                                       >
                                         <span className="font-semibold text-slate-600">
                                           {formatTimestamp(segment.start)}
