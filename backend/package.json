@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "dev:full": "bash ./start-backend.sh",
     "backfill:embeddings": "node src/scripts/backfillEmbeddings.js",
     "backfill:milvus": "node src/scripts/backfillMilvus.js",
     "migrate:uploads": "node src/scripts/migrateUploadsToDb.js",
