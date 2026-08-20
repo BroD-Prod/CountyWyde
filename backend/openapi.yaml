@@ -1,0 +1,901 @@
+openapi: 3.0.3
+info:
+  title: CountyWyde API
+  version: 1.0.0
+  description: |
+    API for the CountyWyde public search experience, authenticated account flows,
+    document upload management, and administrative review tools.
+  contact:
+    name: CountyWyde
+servers:
+  - url: http://localhost:1337
+    description: Local backend server
+  - url: https://your-countywyde-backend.example.com
+    description: Production backend
+security:
+  - cookieAuth: []
+paths:
+  /search:
+    get:
+      summary: Search endpoint health check
+      description: Returns a simple status message confirming the search API is available.
+      responses:
+        '200':
+          description: API is available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+    post:
+      summary: Run a county-aware search
+      description: Searches the county knowledge base for the submitted prompt and returns a grounded answer plus citations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+                - county
+                - state
+              properties:
+                prompt:
+                  type: string
+                  example: What are the filing deadlines for property records?
+                county:
+                  type: string
+                  example: Travis
+                state:
+                  type: string
+                  example: TX
+      responses:
+        '200':
+          description: Search result returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Invalid prompt, county, or state
+        '429':
+          description: Search rate limit exceeded
+        '500':
+          description: Search backend error
+
+  /upload:
+    post:
+      summary: Upload a file to the current authenticated user's county
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/UploadFilePayload'
+      responses:
+        '201':
+          description: Upload processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filesProcessed:
+                    type: integer
+                  documentsSaved:
+                    type: integer
+                  added:
+                    type: integer
+        '401':
+          description: User must be signed in
+        '413':
+          description: Upload exceeds file size limit
+        '422':
+          description: Invalid upload payload
+    get:
+      summary: List uploads for the current authenticated user county
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of county uploads
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  uploads:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UploadedChunk'
+        '401':
+          description: User must be signed in
+    delete:
+      summary: Delete uploaded content by id or source
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              oneOf:
+                - required: [id]
+                - required: [source]
+              properties:
+                id:
+                  type: string
+                source:
+                  type: string
+      responses:
+        '200':
+          description: Upload deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+        '401':
+          description: User must be signed in
+        '404':
+          description: Matching upload not found
+
+  /upload/video:
+    post:
+      summary: Upload a video file for transcription
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: header
+          name: X-File-Name
+          required: false
+          schema:
+            type: string
+        - in: header
+          name: X-Video-Created-At
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '201':
+          description: Video upload accepted and queued for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+                  file:
+                    type: string
+                  videoCreatedAt:
+                    type: string
+                    format: date-time
+        '401':
+          description: User must be signed in
+        '415':
+          description: Unsupported video type
+        '413':
+          description: Video exceeds limit
+
+  /upload/video/{recordId}/status:
+    get:
+      summary: Get video processing status
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: recordId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Video processing status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoStatus'
+        '404':
+          description: Video record not found
+
+  /upload/video/{recordId}/transcript:
+    get:
+      summary: Get video transcript data
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: recordId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transcript payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoTranscript'
+        '404':
+          description: Video record not found
+        '409':
+          description: Transcript not ready yet
+
+  /upload/video/{recordId}/original:
+    get:
+      summary: Download the original video file
+      security:
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: recordId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Binary video content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Video file not found
+
+  /documents/{documentId}/original:
+    get:
+      summary: Fetch the original uploaded document by document id
+      parameters:
+        - in: path
+          name: documentId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Original uploaded document
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Document not found
+
+  /account/signup:
+    post:
+      summary: Create a new account request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountSignupRequest'
+      responses:
+        '200':
+          description: Account request created
+        '400':
+          description: Invalid request payload
+        '409':
+          description: Duplicate or already existing account
+
+  /account/request-access:
+    post:
+      summary: Request access to a county account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessRequest'
+      responses:
+        '200':
+          description: Access request submitted
+        '400':
+          description: Invalid input
+        '409':
+          description: Pending request already exists
+
+  /account/login:
+    post:
+      summary: Sign in with username and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: county.admin@example.com
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Login successful or 2FA required
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requiresTwoFactor:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          description: Invalid credentials
+        '403':
+          description: Account pending approval
+
+  /account/2fa/verify:
+    post:
+      summary: Complete two-factor verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+                  pattern: '^\d{6}$'
+      responses:
+        '200':
+          description: Authentication complete
+        '401':
+          description: 2FA challenge expired or invalid
+
+  /account/2fa/resend:
+    post:
+      summary: Resend the verification code
+      responses:
+        '200':
+          description: New code sent
+        '401':
+          description: 2FA challenge expired or invalid
+
+  /account/session:
+    get:
+      summary: Return the current authenticated session state
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Session status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Not authenticated
+
+  /account:
+    get:
+      summary: Get the current authenticated account details
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: User must be signed in
+    patch:
+      summary: Update the current authenticated account
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                county:
+                  type: string
+                state:
+                  type: string
+                fullName:
+                  type: string
+      responses:
+        '200':
+          description: Account updated
+        '400':
+          description: Invalid county or state
+        '401':
+          description: User must be signed in
+
+  /account/delete:
+    delete:
+      summary: Delete the current authenticated account
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Account deleted
+        '401':
+          description: User must be signed in
+
+  /account/password:
+    patch:
+      summary: Change the current password
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - currentPassword
+                - newPassword
+              properties:
+                currentPassword:
+                  type: string
+                  format: password
+                newPassword:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Password updated successfully
+        '401':
+          description: Invalid current password or not authenticated
+
+  /account/password/forgot:
+    post:
+      summary: Request a password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Reset email sent if account exists
+
+  /account/password/reset:
+    post:
+      summary: Reset a password using a token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - newPassword
+              properties:
+                token:
+                  type: string
+                newPassword:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Password reset successful
+        '400':
+          description: Invalid or expired reset token
+
+  /counties:
+    get:
+      summary: List county names from the registry
+      responses:
+        '200':
+          description: County list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  counties:
+                    type: array
+                    items:
+                      type: string
+
+  /states:
+    get:
+      summary: List registered states
+      responses:
+        '200':
+          description: State list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  states:
+                    type: array
+                    items:
+                      type: string
+
+  /admin/pending:
+    get:
+      summary: List pending account approvals
+      security:
+        - adminKey: []
+      responses:
+        '200':
+          description: Pending accounts list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending:
+                    type: array
+                    items:
+                      type: object
+        '403':
+          description: Forbidden for non-admin callers
+
+  /admin/account-requests:
+    get:
+      summary: List pending account request submissions
+      security:
+        - adminKey: []
+      responses:
+        '200':
+          description: Pending account requests
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      type: object
+        '403':
+          description: Forbidden
+
+  /admin/account-requests/approve:
+    patch:
+      summary: Approve a pending account request
+      security:
+        - adminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - requestId
+              properties:
+                requestId:
+                  type: string
+      responses:
+        '200':
+          description: Account request approved
+        '403':
+          description: Forbidden
+
+  /admin/account-requests/reject:
+    delete:
+      summary: Reject a pending account request
+      security:
+        - adminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - requestId
+              properties:
+                requestId:
+                  type: string
+      responses:
+        '200':
+          description: Account request rejected
+        '403':
+          description: Forbidden
+
+  /admin/approve:
+    patch:
+      summary: Approve a pending account
+      security:
+        - adminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - accountId
+              properties:
+                accountId:
+                  type: string
+      responses:
+        '200':
+          description: Account approved
+        '403':
+          description: Forbidden
+
+  /admin/reject:
+    delete:
+      summary: Reject a pending account
+      security:
+        - adminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - accountId
+              properties:
+                accountId:
+                  type: string
+      responses:
+        '200':
+          description: Account rejected
+        '403':
+          description: Forbidden
+
+  /admin/security:
+    get:
+      summary: Get current IP security snapshot
+      security:
+        - adminKey: []
+      responses:
+        '200':
+          description: Security overview
+    delete:
+      summary: Clear security state for a specific IP or all IPs
+      security:
+        - adminKey: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ip:
+                  type: string
+      responses:
+        '200':
+          description: Security state cleared
+        '403':
+          description: Forbidden
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session_token
+    adminKey:
+      type: apiKey
+      in: header
+      name: X-Admin-Key
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        fullName:
+          type: string
+        county:
+          type: string
+        state:
+          type: string
+        pending:
+          type: boolean
+        isAdmin:
+          type: boolean
+
+    AccountSignupRequest:
+      type: object
+      required:
+        - username
+        - password
+        - fullName
+        - county
+        - state
+      properties:
+        username:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        fullName:
+          type: string
+        county:
+          type: string
+        state:
+          type: string
+
+    AccessRequest:
+      type: object
+      required:
+        - fullName
+        - email
+        - county
+        - state
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        county:
+          type: string
+        state:
+          type: string
+        notes:
+          type: string
+
+    UploadFilePayload:
+      type: object
+      required:
+        - name
+        - base64
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        size:
+          type: integer
+        base64:
+          type: string
+          description: Base64-encoded file content
+
+    UploadedChunk:
+      type: object
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+        county:
+          type: string
+        state:
+          type: string
+        text:
+          type: string
+        parsedType:
+          type: string
+
+    SearchResponse:
+      type: object
+      required:
+        - result
+        - sources
+      properties:
+        result:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceCitation'
+
+    SourceCitation:
+      type: object
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+        documentId:
+          type: string
+          nullable: true
+        originalFileName:
+          type: string
+          nullable: true
+        parsedType:
+          type: string
+          nullable: true
+        timestamp:
+          type: string
+          nullable: true
+        timestampSeconds:
+          type: integer
+          nullable: true
+        transcriptSnippet:
+          type: string
+          nullable: true
+
+    VideoStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        error:
+          type: string
+          nullable: true
+        videoCreatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    VideoTranscript:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        transcript:
+          type: object
+          description: Whisper transcript payload
+        transcriptSummary:
+          type: object
+          description: Summary of text extraction and duration
+        error:
+          type: string
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string

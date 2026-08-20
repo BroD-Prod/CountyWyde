@@ -2,6 +2,10 @@
 
 CountyWyde is a county records search application with a public frontend and a backend API. The frontend can be embedded into a county website with an iframe so the county can offer a search widget without exposing the full CountyWyde application.
 
+## API documentation
+
+The backend OpenAPI specification is maintained in [backend/openapi.yaml](backend/openapi.yaml). It documents the authenticated account flows, upload endpoints, video processing routes, and public search contract used by the application.
+
 ## Public frontend URL
 
 Use the public frontend URL, not the backend API endpoint.
