@@ -82,8 +82,8 @@ export default function Login() {
 
   if (checkingSession) {
     return (
-      <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
-        <p className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-300">
+      <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+        <p className="border border-sky-300/20 bg-slate-950/60 px-5 py-3 text-sm text-slate-200 shadow-[0_0_0_1px_rgba(125,211,252,0.12)]">
           Checking session...
         </p>
       </main>
@@ -91,14 +91,14 @@ export default function Login() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+    <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <section className="mx-auto w-full max-w-md">
-        <div className="rounded-4xl border border-white/10 bg-white/92 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+        <div className="border border-sky-300/20 bg-slate-900/60 p-8 text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">
             Account
           </p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">Login</h1>
-          <p className="mt-3 text-sm leading-7 text-slate-500">
+          <h1 className="mt-2 text-3xl font-semibold text-slate-50">Login</h1>
+          <p className="mt-3 text-sm leading-7 text-slate-300">
             Sign in to search county records and manage uploads.
           </p>
 
@@ -108,41 +108,41 @@ export default function Login() {
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-black shadow-sm outline-none transition placeholder-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              className="block w-full border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
             />
             <input
               type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-black shadow-sm outline-none transition placeholder-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              className="block w-full border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
             />
             <button
               type="submit"
-              className="w-full rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700"
+              className="w-full bg-linear-to-r from-sky-600 via-cyan-500 to-sky-700 px-4 py-3 font-semibold text-white shadow-lg shadow-sky-950/20 transition hover:from-sky-500 hover:to-cyan-600"
             >
               Login
             </button>
             <div className="text-center">
               <a
                 href="/account/forgot-password"
-                className="text-sm font-semibold text-slate-600 transition hover:text-slate-900"
+                className="text-sm font-semibold text-sky-200 transition hover:text-sky-100"
               >
                 Forgot password?
               </a>
             </div>
           </form>
 
-          <h2 className="mt-6 text-center text-sm text-slate-500">
+          <h2 className="mt-6 text-center text-sm text-slate-300">
             Need access?{" "}
             <a
               href="/contact"
-              className="font-semibold text-slate-700 hover:text-slate-900"
+              className="font-semibold text-sky-200 hover:text-sky-100"
             >
               Request access
             </a>
           </h2>
-          <p className="mt-2 text-center text-xs leading-6 text-slate-500">
+          <p className="mt-2 text-center text-xs leading-6 text-slate-300">
             Accounts are created after manual approval by the team.
           </p>
         </div>

@@ -1,21 +1,21 @@
 export default function PrivacyPolicyPage() {
   return (
-    <main className="min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+    <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <section className="mx-auto w-full max-w-3xl">
-        <div className="rounded-4xl border border-white/10 bg-white/92 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+        <div className="border border-sky-300/20 bg-slate-900/40 p-8 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">
             Legal
           </p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">
+          <h1 className="mt-2 text-3xl font-semibold text-slate-50">
             Privacy Policy
           </h1>
-          <p className="mt-4 text-sm leading-7 text-slate-600">
+          <p className="mt-4 text-sm leading-7 text-slate-300">
             Last updated: May 28, 2026
           </p>
 
-          <div className="mt-6 space-y-5 text-sm leading-7 text-slate-700">
+          <div className="mt-6 space-y-5 text-sm leading-7 text-slate-300">
             <section>
-              <h2 className="text-base font-semibold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-50">
                 Data Collection Clause
               </h2>
               <p className="mt-2">
@@ -28,7 +28,7 @@ export default function PrivacyPolicyPage() {
               </p>
             </section>
             <section>
-              <h2 className="text-base font-semibold text-slate-900">
+              <h2 className="text-base font-semibold text-slate-50">
                 Children&apos;s Privacy (Under 13)
               </h2>
               <p className="mt-2">

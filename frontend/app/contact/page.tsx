@@ -96,27 +96,27 @@ export default function Contact() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+    <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <section className="mx-auto w-full max-w-2xl">
-        <div className="rounded-4xl border border-white/10 bg-white/92 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+        <div className="border border-sky-300/20 bg-slate-900/40 p-8 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">
             Contact
           </p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">
+          <h1 className="mt-2 text-3xl font-semibold text-slate-50">
             County Account Request
           </h1>
-          <p className="mt-3 text-sm leading-7 text-slate-500">
+          <p className="mt-3 text-sm leading-7 text-slate-300">
             County teams can request access here. Requests are reviewed by an
             administrator before any account is created or approved.
           </p>
-          <p className="mt-2 text-sm leading-7 text-slate-500">
+          <p className="mt-2 text-sm leading-7 text-slate-300">
             This form is the only public registration flow. Please use your
             official county information so the request can be verified.
           </p>
 
           <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-4">
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-semibold text-slate-700">
+              <span className="text-sm font-semibold text-slate-200">
                 County Contact Name
               </span>
               <input
@@ -125,45 +125,45 @@ export default function Contact() {
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
                 required
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring focus:ring-slate-500 focus:ring-opacity-50"
+                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               />
             </label>
 
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-semibold text-slate-700">Email</span>
+              <span className="text-sm font-semibold text-slate-200">Email</span>
               <input
                 type="email"
                 name="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring focus:ring-slate-500 focus:ring-opacity-50"
+                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               />
             </label>
 
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-semibold text-slate-700">County</span>
+              <span className="text-sm font-semibold text-slate-200">County</span>
               <input
                 type="text"
                 name="county"
                 value={county}
                 onChange={(event) => setCounty(event.target.value)}
                 required
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring focus:ring-slate-500 focus:ring-opacity-50"
+                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               />
             </label>
 
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-semibold text-slate-700">State</span>
+              <span className="text-sm font-semibold text-slate-200">State</span>
               <select
                 value={state}
                 onChange={(event) => setState(event.target.value)}
                 required
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring focus:ring-slate-500 focus:ring-opacity-50"
+                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               >
-                <option value="">Select a state</option>
+                <option value="" className="bg-slate-900 text-slate-100">Select a state</option>
                 {states.map((item) => (
-                  <option key={item.id} value={item.abbreviation}>
+                  <option key={item.id} value={item.abbreviation} className="bg-slate-900 text-slate-100">
                     {item.name} ({item.abbreviation})
                   </option>
                 ))}
@@ -171,7 +171,7 @@ export default function Contact() {
             </label>
 
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-semibold text-slate-700">
+              <span className="text-sm font-semibold text-slate-200">
                 County Notes (Optional)
               </span>
               <textarea
@@ -179,34 +179,33 @@ export default function Contact() {
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
                 rows={4}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-400 focus:border-slate-500 focus:ring focus:ring-slate-500 focus:ring-opacity-50"
+                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               />
             </label>
 
             <button
               type="submit"
               disabled={!canSubmit || isSubmitting}
-              className="mt-4 rounded-lg bg-slate-700 px-4 py-2 text-white hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-4 border border-sky-300/50 bg-sky-500/15 px-4 py-2.5 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? "Submitting..." : "Request County Access"}
             </button>
           </form>
 
-          <p className="mt-4 text-sm text-slate-500">
-            Or call us at <a href="tel:+1234567890" className="text-slate-700 underline">+1 (234) 567-890</a> to discuss the needs for your county directly. 
+          <p className="mt-4 text-sm text-slate-300">
+            Or call us at <a href="tel:+1234567890" className="text-sky-200 underline">+1 (234) 567-890</a> to discuss the needs for your county directly.
           </p>
           {statusMessage ? (
             <p
-              className={`mt-4 text-sm ${statusType === "success" ? "text-emerald-700" : "text-red-600"
-                }`}
+              className={`mt-4 text-sm ${statusType === "success" ? "text-emerald-400" : "text-red-400"}`}
             >
               {statusMessage}
             </p>
           ) : null}
 
-          <p className="mt-3 text-sm leading-7 text-slate-500">
+          <p className="mt-3 text-sm leading-7 text-slate-300">
             By requesting access, you agree to our{" "}
-            <a href="/tos" className="text-slate-700 underline">
+            <a href="/tos" className="text-sky-200 underline">
               terms and conditions
             </a>
             .

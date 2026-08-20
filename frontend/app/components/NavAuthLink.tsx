@@ -41,9 +41,12 @@ export default function NavAuthLink() {
     };
   }, [pathname]);
 
+  const linkClassName =
+    "border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100";
+
   if (checkingSession) {
     return (
-      <span className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 transition hover:bg-slate-700 hover:text-white">
+      <span className="border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200/80">
         Checking...
       </span>
     );
@@ -51,24 +54,15 @@ export default function NavAuthLink() {
 
   return isAuthenticated ? (
     <>
-      <Link
-        href="/account"
-        className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 transition hover:bg-slate-700 hover:text-white"
-      >
+      <Link href="/account" className={linkClassName}>
         Account
       </Link>
-      <Link
-        href="/upload"
-        className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 transition hover:bg-slate-700 hover:text-white"
-      >
+      <Link href="/upload" className={linkClassName}>
         Upload
       </Link>
     </>
   ) : (
-    <Link
-      href="/account/login"
-      className="rounded-full border border-slate-700 bg-slate-800 px-4 py-2 text-slate-200 transition hover:bg-slate-700 hover:text-white"
-    >
+    <Link href="/account/login" className={linkClassName}>
       Login
     </Link>
   );

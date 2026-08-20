@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAlert } from "./components/AlertProvider";
 import Loading from "./components/Loading";
@@ -76,6 +76,32 @@ function formatTimestamp(seconds: number | null | undefined): string {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1337";
 
 export default function Home() {
+  return (
+    <Suspense fallback={<HomePageFallback />}>
+      <HomePageContent />
+    </Suspense>
+  );
+}
+
+function HomePageFallback() {
+  return (
+    <main className="min-h-[calc(100vh-5rem)] px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-2xl">
+        <div className="overflow-hidden border border-sky-300/15 bg-[#071827]/80 p-6 text-slate-100 shadow-2xl shadow-slate-950/30 backdrop-blur-xl sm:p-8">
+          <div className="mb-6 h-8 w-48 animate-pulse bg-slate-700" />
+          <div className="space-y-4">
+            <div className="h-12 animate-pulse bg-slate-700" />
+            <div className="h-12 animate-pulse bg-slate-700" />
+            <div className="h-12 animate-pulse bg-slate-700" />
+            <div className="h-12 animate-pulse bg-slate-600" />
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function HomePageContent() {
   const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
   const [result, setResult] = useState("");
@@ -268,43 +294,19 @@ export default function Home() {
   };
 
   return (
-    <main
-      className={
-        isEmbed
-          ? "min-h-screen bg-white px-3 py-4 text-slate-900"
-          : "min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8"
-      }
-    >
-      <section
-        className={
-          isEmbed ? "mx-auto w-full max-w-md" : "mx-auto w-full max-w-2xl"
-        }
-      >
-        <div
-          className={
-            isEmbed
-              ? "overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-              : "overflow-hidden rounded-4xl border border-white/10 bg-white/92 p-6 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8"
-          }
-        >
-          {!isEmbed && (
-            <>
-              <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-slate-700 via-slate-500 to-slate-700" />
-              <div className="mb-6">
-                <h2 className="mt-2 text-2xl font-semibold text-slate-900">
-                  Search CountyWyde
-                </h2>
-              </div>
-            </>
-          )}
+    <main className="relative min-h-[calc(100vh-5rem)] px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+      <section className="mx-auto w-full max-w-2xl">
+        <div className="overflow-hidden border border-sky-300/15 bg-[#071827]/80 p-6 text-slate-100 shadow-2xl shadow-slate-950/30 backdrop-blur-xl sm:p-8">
+          <div className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-sky-600 via-cyan-400 to-sky-600" />
+          <div className="mb-6">
+            <h2 className="mt-2 text-2xl font-semibold text-slate-100">
+              Search CountyWyde
+            </h2>
+          </div>
 
           <div className="space-y-4">
             <select
-              className={
-                isEmbed
-                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-              }
+              className="block w-full border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-slate-100 shadow-sm outline-none transition hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
               value={state}
               onChange={(e) => {
                 setState(e.target.value);
@@ -320,11 +322,7 @@ export default function Home() {
             </select>
 
             <select
-              className={
-                isEmbed
-                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
-                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-              }
+              className="block w-full border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-slate-100 shadow-sm outline-none transition hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
               value={county}
               onChange={(e) => setCounty(e.target.value)}
               disabled={!state}
@@ -338,11 +336,7 @@ export default function Home() {
             </select>
 
             <input
-              className={
-                isEmbed
-                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-              }
+              className="block w-full border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
               placeholder="Search..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -354,11 +348,7 @@ export default function Home() {
             />
 
             <button
-              className={
-                isEmbed
-                  ? "flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
-                  : "flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
-              }
+              className="flex w-full items-center justify-center gap-2 bg-linear-to-r from-sky-600 via-cyan-500 to-sky-700 px-4 py-3 font-semibold text-white shadow-lg shadow-sky-950/20 transition hover:from-sky-500 hover:to-cyan-600 disabled:cursor-not-allowed disabled:opacity-70"
               onClick={handleSearch}
               disabled={isSearching}
             >
@@ -366,9 +356,9 @@ export default function Home() {
             </button>
           </div>
 
-          {!isEmbed && result && (
-            <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm leading-6 text-slate-800 shadow-sm">
-              <p className="font-semibold text-slate-700">Result:</p>
+          {result && (
+            <div className="mt-6 space-y-4 border border-sky-300/15 bg-slate-950/50 p-4 text-left text-sm leading-6 text-slate-200 shadow-sm">
+              <p className="font-semibold text-sky-100">Result:</p>
               <p className="whitespace-pre-wrap">{result}</p>
 
               <div className="space-y-3">
@@ -405,27 +395,27 @@ export default function Home() {
                   return (
                     <div
                       key={`${source.id}-${source.source}`}
-                      className="rounded-xl border border-slate-200 bg-white p-3"
+                      className="border border-sky-300/15 bg-slate-900/70 p-3"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-medium text-slate-700">
+                        <p className="text-sm font-medium text-slate-100">
                           {source.source}
                         </p>
                         {transcriptHeaderTimestamp && (
-                          <details className="group rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                          <details className="group border border-sky-300/15 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200">
                             <summary className="cursor-pointer list-none">
                               Transcript at {transcriptHeaderTimestamp}
                             </summary>
-                            <div className="mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-normal text-slate-700">
+                            <div className="mt-3 space-y-2 border border-sky-300/15 bg-slate-950/70 p-3 text-sm font-normal text-slate-200">
                               {source.transcriptSegments?.length ? (
-                                <ul className="space-y-2 text-xs text-slate-500">
+                                <ul className="space-y-2 text-xs text-slate-300">
                                   {source.transcriptSegments.map(
                                     (segment, index) => (
                                       <li
                                         key={`${segment.start ?? index
                                           }-${index}`}
                                       >
-                                        <span className="font-semibold text-slate-600">
+                                        <span className="font-semibold text-slate-100">
                                           {formatTimestamp(segment.start)}
                                         </span>{" "}
                                         {segment.text}
@@ -447,7 +437,7 @@ export default function Home() {
                                 "noopener,noreferrer",
                               )
                             }
-                            className="rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600"
+                            className="bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600"
                           >
                             Open PDF
                           </button>
@@ -462,7 +452,7 @@ export default function Home() {
                                 "noopener,noreferrer",
                               )
                             }
-                            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                            className="bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
                           >
                             Download Video
                           </button>

@@ -103,7 +103,7 @@ export default function VerifyPage() {
     }
 
     return (
-        <main className="relative min-h-[calc(100vh-5rem)] overflow-hidden bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+        <main className="relative min-h-[calc(100vh-5rem)] overflow-hidden bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
             <div className="pointer-events-none absolute inset-0">
                 <div className="absolute -left-20 top-10 h-64 w-64 rounded-full bg-cyan-500/15 blur-3xl" />
                 <div className="absolute right-0 top-1/3 h-72 w-72 rounded-full bg-teal-400/10 blur-3xl" />
@@ -111,7 +111,7 @@ export default function VerifyPage() {
             </div>
 
             <section className="relative mx-auto w-full max-w-xl">
-                <div className="rounded-4xl border border-white/10 bg-white/90 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
+                <div className="border border-white/10 bg-white/90 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                         Secure Access
                     </p>
