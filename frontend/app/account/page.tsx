@@ -115,8 +115,8 @@ export default function Account() {
 
   if (checkingSession) {
     return (
-      <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
-        <p className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-300">
+      <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+        <p className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-300">
           Loading account...
         </p>
       </main>
@@ -124,18 +124,18 @@ export default function Account() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+    <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <section className="mx-auto w-full max-w-2xl">
-        <div className="rounded-4xl border border-white/10 bg-white/92 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+        <div className="rounded-3xl border border-sky-300/20 bg-slate-900/40 p-8 text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
             Account
           </p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">
+          <h1 className="mt-2 text-3xl font-semibold text-slate-100">
             Account Settings
           </h1>
-          <p className="mt-3 text-sm leading-7 text-slate-500">
+          <p className="mt-3 text-sm leading-7 text-slate-400">
             Signed in as{" "}
-            <span className="font-semibold text-slate-900">
+            <span className="font-semibold text-slate-100">
               {user?.username}
             </span>
           </p>
@@ -146,12 +146,12 @@ export default function Account() {
               placeholder="County"
               value={county}
               onChange={(e) => setCounty(e.target.value)}
-              className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-black shadow-sm outline-none transition placeholder-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              className="block w-full rounded-2xl border border-cyan-200/20 bg-[#0b2233] px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-cyan-200/40 focus:border-cyan-200/70 focus:bg-[#0d2a3d]"
             />
             <select
               value={state}
               onChange={(e) => setState(e.target.value)}
-              className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-black shadow-sm outline-none transition focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+              className="block w-full rounded-2xl border border-cyan-200/20 bg-[#0b2233] px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition hover:border-cyan-200/40 focus:border-cyan-200/70 focus:bg-[#0d2a3d]"
             >
               <option value="">Select State</option>
               {states.map((item) => (
@@ -163,19 +163,20 @@ export default function Account() {
             <div className="flex flex-col gap-3 pt-2 sm:flex-row">
               <button
                 type="submit"
-                className="inline-flex flex-1 items-center justify-center rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700"
+                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20"
               >
                 Save Changes
               </button>
               <a
                 href="/account/change-password"
-                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 font-semibold text-slate-900 transition hover:bg-slate-100"
+                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20"
               >
                 Change Password
               </a>
+              {/* kept red to signal a destructive action */}
               <a
                 href="/account/delete"
-                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-semibold text-red-700 transition hover:bg-red-100"
+                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-red-400/50 bg-red-500/15 px-4 py-3 font-semibold text-red-100 transition hover:border-red-300/80 hover:bg-red-400/20"
               >
                 Delete Account
               </a>
