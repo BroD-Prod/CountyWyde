@@ -389,12 +389,34 @@ function HomePageContent() {
           )}
 
           {result && (
-            <div className="mt-6 space-y-4 rounded-3xl border border-slate-600/20 bg-[#06131f]/80 p-4 text-left text-sm leading-6 text-slate-200 shadow-sm">
-              <p className="font-semibold text-slate-300">Result:</p>
+            <div
+              className={
+                isEmbed
+                  ? "mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm leading-6 text-slate-800 shadow-sm"
+                  : "mt-6 space-y-4 rounded-3xl border border-slate-600/20 bg-[#06131f]/80 p-4 text-left text-sm leading-6 text-slate-200 shadow-sm"
+              }
+            >
+              <p
+                className={
+                  isEmbed
+                    ? "font-semibold text-slate-700"
+                    : "font-semibold text-slate-300"
+                }
+              >
+                Result:
+              </p>
               <p className="whitespace-pre-wrap">{result}</p>
 
               <div className="space-y-3 rounded-2xl">
-                <p className="font-semibold text-slate-700">Sources:</p>
+                <p
+                  className={
+                    isEmbed
+                      ? "font-semibold text-slate-700"
+                      : "font-semibold text-slate-300"
+                  }
+                >
+                  Sources:
+                </p>
                 {sources.length === 0 && <p>none</p>}
 
                 {sources.map((source) => {
@@ -427,28 +449,68 @@ function HomePageContent() {
                   return (
                     <div
                       key={`${source.id}-${source.source}`}
-                      className="rounded-2xl border border-slate-600/20 bg-[#0b2233]/75 p-3"
+                      className={
+                        isEmbed
+                          ? "rounded-xl border border-slate-200 bg-white p-3"
+                          : "rounded-2xl border border-slate-600/20 bg-[#0b2233]/75 p-3"
+                      }
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl">
-                        <p className="text-sm font-medium text-slate-100">
+                      <div
+                        className={
+                          isEmbed
+                            ? "flex flex-wrap items-center justify-between gap-2"
+                            : "flex flex-wrap items-center justify-between gap-2 rounded-xl"
+                        }
+                      >
+                        <p
+                          className={
+                            isEmbed
+                              ? "text-sm font-medium text-slate-700"
+                              : "text-sm font-medium text-slate-100"
+                          }
+                        >
                           {source.source}
                         </p>
                         {transcriptHeaderTimestamp && (
-                          <details className="group rounded-xl border border-slate-600/20 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200">
+                          <details
+                            className={
+                              isEmbed
+                                ? "group rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                                : "group rounded-xl border border-slate-600/20 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200"
+                            }
+                          >
                             <summary className="cursor-pointer list-none">
                               Transcript at {transcriptHeaderTimestamp}
                             </summary>
-                            <div className="mt-3 space-y-2 rounded-xl border border-slate-600/20 bg-slate-950/70 p-3 text-sm font-normal text-slate-200">
+                            <div
+                              className={
+                                isEmbed
+                                  ? "mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-normal text-slate-700"
+                                  : "mt-3 space-y-2 rounded-xl border border-slate-600/20 bg-slate-950/70 p-3 text-sm font-normal text-slate-200"
+                              }
+                            >
                               {source.transcriptSegments?.length ? (
-                                <ul className="space-y-2 rounded-xl text-xs text-slate-300">
+                                <ul
+                                  className={
+                                    isEmbed
+                                      ? "space-y-2 text-xs text-slate-500"
+                                      : "space-y-2 rounded-xl text-xs text-slate-300"
+                                  }
+                                >
                                   {source.transcriptSegments.map(
                                     (segment, index) => (
                                       <li
                                         key={`${segment.start ?? index
                                           }-${index}`}
-                                        className="rounded-lg"
+                                        className={isEmbed ? "" : "rounded-lg"}
                                       >
-                                        <span className="font-semibold text-slate-100">
+                                        <span
+                                          className={
+                                            isEmbed
+                                              ? "font-semibold text-slate-600"
+                                              : "font-semibold text-slate-100"
+                                          }
+                                        >
                                           {formatTimestamp(segment.start)}
                                         </span>{" "}
                                         {segment.text}
@@ -470,7 +532,11 @@ function HomePageContent() {
                                 "noopener,noreferrer",
                               )
                             }
-                            className="rounded-xl border border-slate-500/50 bg-slate-600/15 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25"
+                            className={
+                              isEmbed
+                                ? "rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600"
+                                : "rounded-xl border border-slate-500/50 bg-slate-600/15 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25"
+                            }
                           >
                             Open PDF
                           </button>
@@ -485,7 +551,11 @@ function HomePageContent() {
                                 "noopener,noreferrer",
                               )
                             }
-                            className="rounded-xl border border-slate-500/50 bg-slate-600/15 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25"
+                            className={
+                              isEmbed
+                                ? "rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                                : "rounded-xl border border-slate-500/50 bg-slate-600/15 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25"
+                            }
                           >
                             Download Video
                           </button>
@@ -493,13 +563,25 @@ function HomePageContent() {
                       </div>
 
                       {!canPreviewPdf && !isVideo && (
-                        <p className="mt-2 rounded-lg text-xs text-slate-500">
+                        <p
+                          className={
+                            isEmbed
+                              ? "mt-2 text-xs text-slate-500"
+                              : "mt-2 rounded-lg text-xs text-slate-500"
+                          }
+                        >
                           Preview unavailable for this source.
                         </p>
                       )}
 
                       {source.excerpt && (
-                        <p className="mt-3 line-clamp-4 rounded-lg text-xs text-slate-600">
+                        <p
+                          className={
+                            isEmbed
+                              ? "mt-3 line-clamp-4 text-xs text-slate-600"
+                              : "mt-3 line-clamp-4 rounded-lg text-xs text-slate-600"
+                          }
+                        >
                           {source.excerpt}
                         </p>
                       )}
