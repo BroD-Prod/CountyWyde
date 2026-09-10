@@ -1,7 +1,16 @@
+// Admin CRUD for embed_origins, which scopes an embed widget's searches to
+// a single state/county (enforced in searchControllers.js). This is a
+// SEPARATE allowlist from the frontend's EMBED_ALLOWED_ORIGINS env var
+// (frontend/middleware.ts), which controls whether an origin can frame the
+// widget at all. Onboarding or revoking a partner here does not touch that
+// env var — see the comment in middleware.ts for what to also update there.
 require("dotenv").config();
 const crypto = require("crypto");
 const db = require("../lib/db");
 const helperController = require("./helperController");
+const { isCountyFormatValid, isRegisteredState } = require("../lib/countyRegistry");
+
+const UNIQUE_VIOLATION = "23505";
 
 const ADMIN_KEY = String(process.env.ADMIN_KEY || "").trim();
 
@@ -57,24 +66,47 @@ async function createEmbedOrigin(req, res) {
     return;
   }
 
+  let body;
   try {
-    const body = await helperController.parseJsonBody(req);
-    const label = String(body.label || "").trim();
-    const origin = normalizeOrigin(body.origin);
-    const state = String(body.state || "").trim();
-    const county = String(body.county || "").trim();
+    body = await helperController.parseJsonBody(req);
+  } catch (error) {
+    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
+    return;
+  }
 
-    if (!label || !origin || !state || !county) {
-      res.statusCode = 400;
-      res.setHeader("Content-Type", "application/json");
-      res.end(
-        JSON.stringify({
-          error: "label, a valid origin URL, state, and county are required",
-        }),
-      );
-      return;
-    }
+  const label = String(body.label || "").trim();
+  const origin = normalizeOrigin(body.origin);
+  const state = String(body.state || "").trim();
+  const county = String(body.county || "").trim();
 
+  if (!label || !origin || !state || !county) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify({
+        error: "label, a valid origin URL, state, and county are required",
+      }),
+    );
+    return;
+  }
+
+  if (!(await isRegisteredState(state))) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "state is not a recognized state" }));
+    return;
+  }
+
+  if (!isCountyFormatValid(county)) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "county is not a valid county name" }));
+    return;
+  }
+
+  try {
     const row = await db
       .prepare(
         `INSERT INTO embed_origins (label, origin, state, county, revoked, created_at)
@@ -87,9 +119,19 @@ async function createEmbedOrigin(req, res) {
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ embedOrigin: row }));
   } catch (error) {
-    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    if (error.code === UNIQUE_VIOLATION) {
+      res.statusCode = 409;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          error: "An active embed origin already exists for this origin",
+        }),
+      );
+      return;
+    }
+    res.statusCode = 500;
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
+    res.end(JSON.stringify({ error: "Failed to create embed origin" }));
   }
 }
 
@@ -101,17 +143,25 @@ async function revokeEmbedOrigin(req, res) {
     return;
   }
 
+  let body;
   try {
-    const body = await helperController.parseJsonBody(req);
-    const id = body.id;
+    body = await helperController.parseJsonBody(req);
+  } catch (error) {
+    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
+    return;
+  }
 
-    if (!id) {
-      res.statusCode = 400;
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ error: "Embed origin id is required" }));
-      return;
-    }
+  const id = body.id;
+  if (!id) {
+    res.statusCode = 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "Embed origin id is required" }));
+    return;
+  }
 
+  try {
     const existing = await db
       .prepare("SELECT id, origin FROM embed_origins WHERE id = ?")
       .get(id);
@@ -130,10 +180,10 @@ async function revokeEmbedOrigin(req, res) {
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ message: `Revoked ${existing.origin}` }));
-  } catch (error) {
-    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+  } catch {
+    res.statusCode = 500;
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
+    res.end(JSON.stringify({ error: "Failed to revoke embed origin" }));
   }
 }
 

@@ -110,3 +110,71 @@ test("revokeEmbedOrigin returns 404 for an unknown id", async () => {
   );
   assert.equal(res.statusCode, 404);
 });
+
+test("createEmbedOrigin rejects a state that isn't a recognized state", async () => {
+  const res = makeRes();
+  await createEmbedOrigin(
+    makeReq(
+      { "x-admin-key": "test-admin-key" },
+      {
+        label: "Bad State",
+        origin: `https://test-embed-badstate-${Date.now()}.example.com`,
+        state: "Not A Real State",
+        county: "Pulaski",
+      },
+    ),
+    res,
+  );
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /state/);
+});
+
+test("createEmbedOrigin rejects a malformed county name", async () => {
+  const res = makeRes();
+  await createEmbedOrigin(
+    makeReq(
+      { "x-admin-key": "test-admin-key" },
+      {
+        label: "Bad County",
+        origin: `https://test-embed-badcounty-${Date.now()}.example.com`,
+        state: "IN",
+        county: "123",
+      },
+    ),
+    res,
+  );
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.error, /county/);
+});
+
+test("createEmbedOrigin returns 409 when an active row already exists for the origin", async (t) => {
+  const origin = `https://test-embed-duplicate-${Date.now()}.example.com`;
+  let createdId = null;
+
+  t.after(async () => {
+    if (createdId) {
+      await db.prepare("DELETE FROM embed_origins WHERE id = ?").run(createdId);
+    }
+  });
+
+  const firstRes = makeRes();
+  await createEmbedOrigin(
+    makeReq(
+      { "x-admin-key": "test-admin-key" },
+      { label: "First", origin, state: "IN", county: "Pulaski" },
+    ),
+    firstRes,
+  );
+  assert.equal(firstRes.statusCode, 201);
+  createdId = firstRes.body.embedOrigin.id;
+
+  const secondRes = makeRes();
+  await createEmbedOrigin(
+    makeReq(
+      { "x-admin-key": "test-admin-key" },
+      { label: "Second", origin, state: "IN", county: "Marion" },
+    ),
+    secondRes,
+  );
+  assert.equal(secondRes.statusCode, 409);
+});

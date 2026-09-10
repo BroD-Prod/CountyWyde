@@ -3,6 +3,15 @@ import type { NextRequest } from "next/server";
 
 // Comma-separated list of origins (e.g. "https://partner1.com,https://partner2.com")
 // allowed to embed the search widget in an <iframe>. Configure via Railway env vars.
+//
+// This is a SEPARATE allowlist from the backend's embed_origins table (managed
+// via the /admin/embed-origins API): this one controls who can FRAME the
+// widget at all (CSP), while embed_origins controls which county a framed
+// widget's searches are scoped to. Adding or revoking a partner via the
+// admin API does not update this env var — do both, and redeploy this app,
+// or a newly-added partner's iframe won't load / a revoked partner's iframe
+// will still load (though its searches will now correctly be rejected by
+// the backend once the embed_origins row is revoked).
 const allowedEmbedOrigins = String(process.env.EMBED_ALLOWED_ORIGINS || "")
     .split(",")
     .map((origin) => origin.trim())

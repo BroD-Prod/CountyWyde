@@ -68,22 +68,30 @@ const SEARCH_RATE_LIMIT = 5; // Max 5 searches
 const SEARCH_WINDOW_MS = 60 * 1000; // Per 60 seconds (1 minute)
 
 function getClientIp(req) {
-  // Respect proxies/load balancers if you are hosting on AWS/Render/Heroku, otherwise fallback to socket IP
-  return (
-    req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
-    req.socket?.remoteAddress ||
-    "unknown"
-  );
+  // Take the LAST entry in X-Forwarded-For, not the first: on a standard
+  // single-hop reverse proxy/load balancer (Railway, etc.) that's the one
+  // *appended by our own trusted infra*, reflecting the real peer address.
+  // The leading entries are client-supplied and can be forged to rotate
+  // through fake IPs and dodge the rate limiter below.
+  const forwardedFor = req.headers["x-forwarded-for"];
+  if (forwardedFor) {
+    const hops = String(forwardedFor)
+      .split(",")
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    if (hops.length > 0) {
+      return hops[hops.length - 1];
+    }
+  }
+  return req.socket?.remoteAddress || "unknown";
 }
 
 function isAllowedOrigin(req) {
+  // /search is only ever called by a browser (the main site or an embedded
+  // widget), both of which always send an Origin header, so a request
+  // without one is rejected rather than let through.
   const origin = String(req.headers.origin || "").trim();
-  // No Origin header means the request wasn't made via browser fetch/XHR
-  // (e.g. curl, server-to-server); those aren't subject to CORS anyway.
-  if (!origin) {
-    return true;
-  }
-  return allowedOrigins.has(origin);
+  return Boolean(origin) && allowedOrigins.has(origin);
 }
 
 function checkSearchRateLimit(req, res) {
@@ -112,6 +120,19 @@ function checkSearchRateLimit(req, res) {
 
   return false; // Allowed
 }
+
+// searchRateWindow only overwrites an IP's entry on its next request, so an
+// IP that never comes back would otherwise sit in the map forever. Sweep
+// expired entries periodically instead of letting it grow unbounded.
+const SEARCH_RATE_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, state] of searchRateWindow) {
+    if (state.resetAt <= now) {
+      searchRateWindow.delete(ip);
+    }
+  }
+}, SEARCH_RATE_CLEANUP_INTERVAL_MS).unref();
 
 const server = createServer(async (req, res) => {
   const requestContext = security.beginRequest(req);
