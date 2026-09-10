@@ -45,6 +45,7 @@ const {
 } = require("./src/controllers/uploadVideoControllers");
 
 const {
+  getAllowedEmbedOrigins,
   getEmbedOrigins,
   createEmbedOrigin,
   revokeEmbedOrigin,
@@ -376,6 +377,11 @@ const server = createServer(async (req, res) => {
 
     if (path === "/admin/security" && req.method === "DELETE") {
       await clearSecurityState(req, res);
+      return;
+    }
+
+    if (path === "/embed-origins/allowed" && req.method === "GET") {
+      await getAllowedEmbedOrigins(req, res);
       return;
     }
 

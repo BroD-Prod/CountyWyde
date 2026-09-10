@@ -1,9 +1,9 @@
 // Admin CRUD for embed_origins, which scopes an embed widget's searches to
-// a single state/county (enforced in searchControllers.js). This is a
-// SEPARATE allowlist from the frontend's EMBED_ALLOWED_ORIGINS env var
-// (frontend/middleware.ts), which controls whether an origin can frame the
-// widget at all. Onboarding or revoking a partner here does not touch that
-// env var — see the comment in middleware.ts for what to also update there.
+// a single state/county (enforced in searchControllers.js), plus a public
+// read-only list of active origins that frontend/middleware.ts fetches to
+// build its CSP frame-ancestors policy — this table is the single source
+// of truth for both "who can frame the widget" and "what can they search",
+// so onboarding/revoking a partner here takes effect for both immediately.
 require("dotenv").config();
 const crypto = require("crypto");
 const db = require("../lib/db");
@@ -31,6 +31,28 @@ function normalizeOrigin(value) {
     return new URL(String(value || "").trim()).origin;
   } catch {
     return null;
+  }
+}
+
+// Public and unauthenticated on purpose: this is the same information a
+// browser can already read straight off the CSP header on any response
+// from "/", so gating it behind an admin key would add no confidentiality
+// and would just make the frontend's CSP allowlist harder to build.
+async function getAllowedEmbedOrigins(req, res) {
+  try {
+    const rows = await db
+      .prepare(
+        "SELECT DISTINCT origin FROM embed_origins WHERE revoked = FALSE ORDER BY origin ASC",
+      )
+      .all();
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=30");
+    res.end(JSON.stringify({ origins: rows.map((row) => row.origin) }));
+  } catch {
+    res.statusCode = 500;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "Failed to load allowed embed origins" }));
   }
 }
 
@@ -188,6 +210,7 @@ async function revokeEmbedOrigin(req, res) {
 }
 
 module.exports = {
+  getAllowedEmbedOrigins,
   getEmbedOrigins,
   createEmbedOrigin,
   revokeEmbedOrigin,

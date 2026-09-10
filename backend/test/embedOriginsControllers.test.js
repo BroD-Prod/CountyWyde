@@ -8,6 +8,7 @@ process.env.ADMIN_KEY = "test-admin-key";
 
 const db = require("../src/lib/db");
 const {
+  getAllowedEmbedOrigins,
   getEmbedOrigins,
   createEmbedOrigin,
   revokeEmbedOrigin,
@@ -177,4 +178,42 @@ test("createEmbedOrigin returns 409 when an active row already exists for the or
     secondRes,
   );
   assert.equal(secondRes.statusCode, 409);
+});
+
+test("getAllowedEmbedOrigins is public, and lists active origins but not revoked ones", async (t) => {
+  const activeOrigin = `https://test-embed-allowed-active-${Date.now()}.example.com`;
+  const revokedOrigin = `https://test-embed-allowed-revoked-${Date.now()}.example.com`;
+  const insertedIds = [];
+
+  t.after(async () => {
+    for (const id of insertedIds) {
+      await db.prepare("DELETE FROM embed_origins WHERE id = ?").run(id);
+    }
+  });
+
+  const active = await db
+    .prepare(
+      `INSERT INTO embed_origins (label, origin, state, county, revoked, created_at)
+       VALUES (?, ?, ?, ?, FALSE, ?)
+       RETURNING id`,
+    )
+    .get("Active", activeOrigin, "IN", "Pulaski", Date.now());
+  insertedIds.push(active.id);
+
+  const revoked = await db
+    .prepare(
+      `INSERT INTO embed_origins (label, origin, state, county, revoked, created_at)
+       VALUES (?, ?, ?, ?, TRUE, ?)
+       RETURNING id`,
+    )
+    .get("Revoked", revokedOrigin, "IN", "Marion", Date.now());
+  insertedIds.push(revoked.id);
+
+  // No X-Admin-Key header at all — this endpoint must not require one.
+  const res = makeRes();
+  await getAllowedEmbedOrigins(makeReq({}), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.ok(res.body.origins.includes(activeOrigin));
+  assert.ok(!res.body.origins.includes(revokedOrigin));
 });
