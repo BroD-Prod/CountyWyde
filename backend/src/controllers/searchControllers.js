@@ -5,6 +5,7 @@ const { searchByVector: milvusSearch } = require("../lib/vectorStore");
 const { readChunks } = require("../lib/uploadStore");
 const helperController = require("./helperController");
 const { normalizeCounty, isRegisteredState } = require("../lib/countyRegistry");
+const db = require("../lib/db");
 
 const genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const MAX_JSON_BYTES = 1 * 1024 * 1024;
@@ -16,6 +17,30 @@ const VECTOR_RRF_WEIGHT = 1.2;
 const LEXICAL_RRF_WEIGHT = 0.45;
 const MAX_EVIDENCE_CHUNKS = 8;
 const MAX_EVIDENCE_PER_SOURCE = 3;
+
+// Looks up the single state/county an embedding partner's origin is
+// permitted to search, via the admin-managed embed_origins table.
+async function getEmbedRestriction(req) {
+  const referrer = String(req.headers["x-embed-referrer"] || "").trim();
+  if (!referrer) {
+    return null;
+  }
+
+  let origin;
+  try {
+    origin = new URL(referrer).origin;
+  } catch {
+    return null;
+  }
+
+  return (
+    (await db
+      .prepare(
+        "SELECT state, county FROM embed_origins WHERE origin = ? AND revoked = FALSE",
+      )
+      .get(origin)) || null
+  );
+}
 
 function tokenize(text) {
   return (text || "")
@@ -436,6 +461,21 @@ async function postSearch(req, res) {
       return;
     }
 
+    const embedRestriction = await getEmbedRestriction(req);
+    if (
+      embedRestriction &&
+      (embedRestriction.state !== state ||
+        normalizeCounty(embedRestriction.county) !== county)
+    ) {
+      res.statusCode = 403;
+      res.end(
+        JSON.stringify({
+          error: "This embed is not authorized to search that county",
+        })
+      );
+      return;
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: "Missing GEMINI_API_KEY" }));
@@ -509,12 +549,12 @@ async function postSearch(req, res) {
         parsedType: item.parsedType || null,
         ...(videoTimestampLink
           ? {
-              timestamp: videoTimestampLink.timestamp,
-              timestampSeconds: videoTimestampLink.timestampSeconds,
-              transcriptSnippet: videoTimestampLink.transcriptSnippet,
-              transcriptSegments: videoTimestampLink.transcriptSegments,
-              videoId: videoTimestampLink.videoId,
-            }
+            timestamp: videoTimestampLink.timestamp,
+            timestampSeconds: videoTimestampLink.timestampSeconds,
+            transcriptSnippet: videoTimestampLink.transcriptSnippet,
+            transcriptSegments: videoTimestampLink.transcriptSegments,
+            videoId: videoTimestampLink.videoId,
+          }
           : {}),
       };
     });
@@ -537,4 +577,5 @@ module.exports = {
   postSearch,
   buildVideoTranscriptTimestampLink,
   findPdfDocumentBySource,
+  getEmbedRestriction,
 };

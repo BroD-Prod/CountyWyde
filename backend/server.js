@@ -44,6 +44,12 @@ const {
   getVideoFile,
 } = require("./src/controllers/uploadVideoControllers");
 
+const {
+  getEmbedOrigins,
+  createEmbedOrigin,
+  revokeEmbedOrigin,
+} = require("./src/controllers/embedOriginsControllers");
+
 const hostname = process.env.HOSTNAME || "127.0.0.1";
 const port = Number(process.env.PORT || 1337);
 const configuredFrontendOrigin = String(
@@ -68,6 +74,16 @@ function getClientIp(req) {
     req.socket?.remoteAddress ||
     "unknown"
   );
+}
+
+function isAllowedOrigin(req) {
+  const origin = String(req.headers.origin || "").trim();
+  // No Origin header means the request wasn't made via browser fetch/XHR
+  // (e.g. curl, server-to-server); those aren't subject to CORS anyway.
+  if (!origin) {
+    return true;
+  }
+  return allowedOrigins.has(origin);
 }
 
 function checkSearchRateLimit(req, res) {
@@ -122,7 +138,7 @@ const server = createServer(async (req, res) => {
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename, X-Video-Created-At",
+    "Content-Type, X-Admin-Key, X-File-Name, X-Upload-Filename, X-Video-Created-At, X-Embed-Referrer",
   );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -167,6 +183,11 @@ const server = createServer(async (req, res) => {
     }
 
     if (path === "/search" && req.method === "POST") {
+      if (!isAllowedOrigin(req)) {
+        res.statusCode = 403;
+        res.end(JSON.stringify({ error: "Origin not allowed" }));
+        return;
+      }
       if (checkSearchRateLimit(req, res)) {
         return;
       }
@@ -336,6 +357,22 @@ const server = createServer(async (req, res) => {
       await clearSecurityState(req, res);
       return;
     }
+
+    if (path === "/admin/embed-origins" && req.method === "GET") {
+      await getEmbedOrigins(req, res);
+      return;
+    }
+
+    if (path === "/admin/embed-origins" && req.method === "POST") {
+      await createEmbedOrigin(req, res);
+      return;
+    }
+
+    if (path === "/admin/embed-origins/revoke" && req.method === "PATCH") {
+      await revokeEmbedOrigin(req, res);
+      return;
+    }
+
     res.statusCode = 404;
     res.end(JSON.stringify({ error: "Not Found" }));
   } catch {

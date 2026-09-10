@@ -1,9 +1,14 @@
+require("dotenv").config();
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
 process.env.GEMINI_API_KEY = "test";
 
-const { buildVideoTranscriptTimestampLink } = require("../src/controllers/searchControllers");
+const db = require("../src/lib/db");
+const {
+    buildVideoTranscriptTimestampLink,
+    getEmbedRestriction,
+} = require("../src/controllers/searchControllers");
 
 test("buildVideoTranscriptTimestampLink returns a timestamp and transcript link for video sources", () => {
     const result = buildVideoTranscriptTimestampLink({
@@ -64,4 +69,48 @@ test("buildVideoTranscriptTimestampLink normalizes millisecond offsets", () => {
         { start: 610, text: "Budget discussion" },
         { start: 695, text: "Road repairs" },
     ]);
+});
+
+test("getEmbedRestriction returns null when no X-Embed-Referrer header is present", async () => {
+    const result = await getEmbedRestriction({ headers: {} });
+    assert.equal(result, null);
+});
+
+test("getEmbedRestriction returns null for an unregistered embed origin", async () => {
+    const result = await getEmbedRestriction({
+        headers: { "x-embed-referrer": "https://unregistered-embed.example.com/page" },
+    });
+    assert.equal(result, null);
+});
+
+test("getEmbedRestriction returns the county for a registered, non-revoked origin, and null once revoked", async (t) => {
+    const origin = `https://test-embed-${Date.now()}.example.com`;
+    let insertedId = null;
+
+    t.after(async () => {
+        if (insertedId) {
+            await db.prepare("DELETE FROM embed_origins WHERE id = ?").run(insertedId);
+        }
+    });
+
+    const inserted = await db
+        .prepare(
+            `INSERT INTO embed_origins (label, origin, state, county, revoked, created_at)
+             VALUES (?, ?, ?, ?, FALSE, ?)
+             RETURNING id`,
+        )
+        .get("Test Partner", origin, "IN", "Pulaski", Date.now());
+    insertedId = inserted.id;
+
+    const restriction = await getEmbedRestriction({
+        headers: { "x-embed-referrer": `${origin}/widget` },
+    });
+    assert.deepEqual(restriction, { state: "IN", county: "Pulaski" });
+
+    await db.prepare("UPDATE embed_origins SET revoked = TRUE WHERE id = ?").run(insertedId);
+
+    const afterRevoke = await getEmbedRestriction({
+        headers: { "x-embed-referrer": `${origin}/widget` },
+    });
+    assert.equal(afterRevoke, null);
 });
