@@ -52,7 +52,12 @@ type SecurityOverview = {
 };
 
 const ADMIN_KEY_STORAGE = "adminKey";
-const API_BASE = "http://localhost:1337";
+const API_BASE_RAW =
+  process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE;
+const API_BASE =
+  API_BASE_RAW && API_BASE_RAW !== "undefined" && API_BASE_RAW !== "null"
+    ? API_BASE_RAW
+    : "http://localhost:1337";
 
 function escapeIfNeeded(value: unknown): string {
   return String(value ?? "");
@@ -391,7 +396,7 @@ export default function AdminPage() {
   return (
     <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-        <section className="border border-white/10 bg-white/92 p-6 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
+        <section className="rounded-3xl border border-white/10 bg-white/92 p-6 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
           <label
             className="mb-2 block text-sm font-medium text-slate-700"
             htmlFor="admin-key-input"
@@ -412,7 +417,7 @@ export default function AdminPage() {
               type="button"
               onClick={() => void loadPending()}
               disabled={loading}
-              className="rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-sky-950/20 transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Loading..." : "Load Pending"}
             </button>
@@ -474,7 +479,7 @@ export default function AdminPage() {
                           "Failed to approve account.",
                         )
                       }
-                      className="rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-950/20 transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Approve
                     </button>
@@ -490,7 +495,7 @@ export default function AdminPage() {
                           "Failed to reject account.",
                         )
                       }
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-2xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Reject
                     </button>
@@ -555,7 +560,7 @@ export default function AdminPage() {
                           "Failed to approve request.",
                         )
                       }
-                      className="rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-2xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-sky-950/20 transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Accept
                     </button>
@@ -571,7 +576,7 @@ export default function AdminPage() {
                           "Failed to deny request.",
                         )
                       }
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-2xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Deny
                     </button>
@@ -598,7 +603,7 @@ export default function AdminPage() {
                 type="button"
                 onClick={() => void loadSecurity()}
                 disabled={securityLoading}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-2xl border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {securityLoading ? "Refreshing..." : "Refresh"}
               </button>
@@ -606,7 +611,7 @@ export default function AdminPage() {
                 type="button"
                 onClick={() => void clearSecurity()}
                 disabled={securityLoading}
-                className="rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-2xl border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Clear All
               </button>
@@ -632,7 +637,7 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => void clearSecurity(item.ip)}
-                      className="mt-1 text-xs font-semibold text-slate-700 underline-offset-2 hover:underline"
+                      className="mt-1 text-xs font-semibold text-red-600 underline-offset-2 hover:underline"
                     >
                       Clear IP
                     </button>
@@ -659,7 +664,7 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => void clearSecurity(item.ip)}
-                      className="mt-1 text-xs font-semibold text-slate-700 underline-offset-2 hover:underline"
+                      className="mt-1 text-xs font-semibold text-red-600 underline-offset-2 hover:underline"
                     >
                       Clear IP
                     </button>
@@ -689,7 +694,7 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => void clearSecurity(item.ip)}
-                      className="mt-1 text-xs font-semibold text-slate-700 underline-offset-2 hover:underline"
+                      className="mt-1 text-xs font-semibold text-red-600 underline-offset-2 hover:underline"
                     >
                       Clear IP
                     </button>

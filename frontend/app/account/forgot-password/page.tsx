@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
     return (
         <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
             <section className="mx-auto w-full max-w-md">
-                <div className="border border-sky-300/20 bg-slate-900/40 p-8 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+                <div className="rounded-3xl border border-sky-300/20 bg-slate-900/40 p-8 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">
                         Account Recovery
                     </p>
@@ -84,19 +84,19 @@ export default function ForgotPasswordPage() {
                             placeholder="Email address"
                             value={email}
                             onChange={(event) => setEmail(event.target.value)}
-                            className="block w-full border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-50 outline-none transition placeholder:text-slate-400 hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                            className="block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-50 outline-none transition placeholder:text-slate-400 hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
                         />
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="w-full border border-sky-300/50 bg-sky-500/15 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="w-full rounded-xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             {submitting ? "Sending..." : "Send Reset Link"}
                         </button>
                     </form>
 
                     {process.env.NODE_ENV !== "production" && resetUrl ? (
-                        <div className="mt-4 border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+                        <div className="mt-4 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
                             <p className="font-semibold">Development reset link</p>
                             <a
                                 href={resetUrl}
@@ -107,7 +107,7 @@ export default function ForgotPasswordPage() {
                         </div>
                     ) : null}
 
-                    <div className="mt-6 border border-white/10 bg-slate-950/40 p-4 text-sm leading-6 text-slate-300">
+                    <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/40 p-4 text-sm leading-6 text-slate-300">
                         <p className="font-semibold text-slate-50">Need immediate access?</p>
                         <p className="mt-1">
                             Contact support and include your full name, county, and state so your identity can be verified.

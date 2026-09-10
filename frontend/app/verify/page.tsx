@@ -18,7 +18,7 @@ export default function VerifyPage() {
     const [success, setSuccess] = useState<string>("");
 
     const apiBase = useMemo<string>(() => {
-        return process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:1337";
+        return process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE || "http://localhost:1337";
     }, []);
 
     useEffect(() => {
@@ -58,7 +58,7 @@ export default function VerifyPage() {
                 return;
             }
 
-            setSuccess("Code verified. Redirecting...");
+            setSuccess("Code verified. Redirecting&hellip;");
             window.setTimeout(() => {
                 const destination = payload?.requiresPasswordChange
                     ? "/account/change-password"
@@ -111,7 +111,7 @@ export default function VerifyPage() {
             </div>
 
             <section className="relative mx-auto w-full max-w-xl">
-                <div className="border border-white/10 bg-white/90 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
+                <div className="rounded-3xl border border-white/10 bg-white/90 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
                     <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                         Secure Access
                     </p>
@@ -149,7 +149,7 @@ export default function VerifyPage() {
                         <button
                             type="submit"
                             disabled={isSubmitting || code.length !== OTP_LENGTH}
-                            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="w-full rounded-2xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             {isSubmitting ? "Verifying..." : "Verify and Continue"}
                         </button>
@@ -157,13 +157,13 @@ export default function VerifyPage() {
 
                     <div className="mt-5 flex items-center justify-between gap-3">
                         <p id="otp-feedback" className="text-sm text-slate-600">
-                            Didn't get a code?
+                            Didn&apos;t get a code?
                         </p>
                         <button
                             type="button"
                             onClick={handleResend}
                             disabled={isResending || resendCooldown > 0}
-                            className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="rounded-xl border border-sky-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-sky-700 transition hover:border-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             {isResending
                                 ? "Sending..."

@@ -103,7 +103,7 @@ export default function ChangePasswordPage() {
     if (checkingSession) {
         return (
             <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center bg-[#050b16] px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
-                <p className="border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-300">
+                <p className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-300">
                     Checking session...
                 </p>
             </main>
@@ -133,26 +133,26 @@ export default function ChangePasswordPage() {
                             placeholder={mustChangePassword ? "Current temporary password" : "Current password"}
                             value={currentPassword}
                             onChange={(event) => setCurrentPassword(event.target.value)}
-                            className="block w-full border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-50 outline-none transition placeholder:text-slate-400 hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                            className="block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-50 outline-none transition placeholder:text-slate-400 hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
                         />
                         <input
                             type="password"
                             placeholder="New password (minimum 10 characters)"
                             value={newPassword}
                             onChange={(event) => setNewPassword(event.target.value)}
-                            className="block w-full border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-50 outline-none transition placeholder:text-slate-400 hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                            className="block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-50 outline-none transition placeholder:text-slate-400 hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
                         />
                         <input
                             type="password"
                             placeholder="Confirm new password"
                             value={confirmPassword}
                             onChange={(event) => setConfirmPassword(event.target.value)}
-                            className="block w-full border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-50 outline-none transition placeholder:text-slate-400 hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                            className="block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-50 outline-none transition placeholder:text-slate-400 hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
                         />
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="w-full border border-sky-300/50 bg-sky-500/15 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="w-full rounded-xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             {submitting ? "Updating Password..." : "Set New Password"}
                         </button>

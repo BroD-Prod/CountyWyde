@@ -98,7 +98,7 @@ export default function Contact() {
   return (
     <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <section className="mx-auto w-full max-w-2xl">
-        <div className="border border-sky-300/20 bg-slate-900/40 p-8 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+        <div className="rounded-3xl border border-sky-300/20 bg-slate-900/40 p-8 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">
             Contact
           </p>
@@ -125,7 +125,7 @@ export default function Contact() {
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
                 required
-                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               />
             </label>
 
@@ -137,7 +137,7 @@ export default function Contact() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
-                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               />
             </label>
 
@@ -149,7 +149,7 @@ export default function Contact() {
                 value={county}
                 onChange={(event) => setCounty(event.target.value)}
                 required
-                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               />
             </label>
 
@@ -159,7 +159,7 @@ export default function Contact() {
                 value={state}
                 onChange={(event) => setState(event.target.value)}
                 required
-                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               >
                 <option value="" className="bg-slate-900 text-slate-100">Select a state</option>
                 {states.map((item) => (
@@ -179,14 +179,14 @@ export default function Contact() {
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
                 rows={4}
-                className="border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
+                className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2.5 text-slate-50 placeholder:text-slate-400 outline-none transition hover:border-sky-300/40 focus:border-sky-300/80 focus:bg-slate-950/80 focus:shadow-[0_0_0_1px_rgba(125,211,252,0.5)]"
               />
             </label>
 
             <button
               type="submit"
               disabled={!canSubmit || isSubmitting}
-              className="mt-4 border border-sky-300/50 bg-sky-500/15 px-4 py-2.5 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-4 rounded-xl border border-sky-300/50 bg-sky-500/15 px-4 py-2.5 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting ? "Submitting..." : "Request County Access"}
             </button>

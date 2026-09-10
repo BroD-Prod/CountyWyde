@@ -83,7 +83,7 @@ export default function Login() {
   if (checkingSession) {
     return (
       <main className="flex min-h-[calc(100vh-5rem)] items-center justify-center bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
-        <p className="border border-sky-300/20 bg-slate-950/60 px-5 py-3 text-sm text-slate-200 shadow-[0_0_0_1px_rgba(125,211,252,0.12)]">
+        <p className="rounded-xl border border-sky-300/20 bg-slate-950/60 px-5 py-3 text-sm text-slate-200 shadow-[0_0_0_1px_rgba(125,211,252,0.12)]">
           Checking session...
         </p>
       </main>
@@ -93,7 +93,7 @@ export default function Login() {
   return (
     <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <section className="mx-auto w-full max-w-md">
-        <div className="border border-sky-300/20 bg-slate-900/60 p-8 text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+        <div className="rounded-3xl border border-sky-300/20 bg-slate-900/60 p-8 text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200/80">
             Account
           </p>
@@ -108,18 +108,18 @@ export default function Login() {
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="block w-full border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
+              className="block w-full rounded-xl border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
             />
             <input
               type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="block w-full border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
+              className="block w-full rounded-xl border border-sky-300/20 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-sky-300/40 focus:border-sky-300/60 focus:bg-slate-950/80"
             />
             <button
               type="submit"
-              className="w-full bg-linear-to-r from-sky-600 via-cyan-500 to-sky-700 px-4 py-3 font-semibold text-white shadow-lg shadow-sky-950/20 transition hover:from-sky-500 hover:to-cyan-600"
+              className="w-full rounded-xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20"
             >
               Login
             </button>

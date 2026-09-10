@@ -28,11 +28,8 @@ button,
 input,
 select,
 textarea,
-summary,
-[class*="rounded-"],
-[class*="rounded\["] {
+summary {
   font: inherit;
-  border-radius: 0 !important;
 }
 
 button,

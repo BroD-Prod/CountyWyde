@@ -31,19 +31,19 @@ export default function RootLayout({
                 <div className="hidden items-center gap-2 sm:flex">
                   <Link
                     href="/"
-                    className="border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
+                    className="rounded-xl border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
                   >
                     Home
                   </Link>
                   <Link
                     href="/about"
-                    className="border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
+                    className="rounded-xl border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
                   >
                     About
                   </Link>
                   <Link
                     href="/contact"
-                    className="border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
+                    className="rounded-xl border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
                   >
                     Contact
                   </Link>
@@ -51,25 +51,25 @@ export default function RootLayout({
                 </div>
 
                 <details className="relative sm:hidden">
-                  <summary className="cursor-pointer list-none border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100">
+                  <summary className="cursor-pointer list-none rounded-xl border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100">
                     Menu
                   </summary>
-                  <div className="absolute right-0 mt-2 flex w-64 flex-col gap-2 border border-white/10 bg-slate-950/80 p-3 shadow-[0_0_25px_rgba(14,165,233,0.12)] backdrop-blur-xl">
+                  <div className="absolute right-0 mt-2 flex w-64 flex-col gap-2 rounded-2xl border border-white/10 bg-slate-950/80 p-3 shadow-[0_0_25px_rgba(14,165,233,0.12)] backdrop-blur-xl">
                     <Link
                       href="/"
-                      className="border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-center text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
+                      className="rounded-xl border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-center text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
                     >
                       Home
                     </Link>
                     <Link
                       href="/about"
-                      className="border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-center text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
+                      className="rounded-xl border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-center text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
                     >
                       About
                     </Link>
                     <Link
                       href="/contact"
-                      className="border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-center text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
+                      className="rounded-xl border border-sky-300/15 bg-slate-900/60 px-4 py-2 text-center text-sm text-slate-100 transition hover:border-sky-300/40 hover:bg-sky-500/10 hover:text-sky-100"
                     >
                       Contact
                     </Link>
