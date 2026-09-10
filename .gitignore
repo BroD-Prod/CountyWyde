@@ -25,3 +25,5 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 backend/src/data/app.db
+DEPLOYMENT_GUIDE.md
+EMAIL_SERVICE_SETUP.md

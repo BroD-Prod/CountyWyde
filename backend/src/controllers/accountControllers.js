@@ -32,16 +32,20 @@ const FORGOT_PASSWORD_RATE_LIMIT = 10;
 const RESET_PASSWORD_RATE_LIMIT = 10;
 const rateWindow = new Map();
 
-function isAdminRequest(req) {
-  if (!ADMIN_KEY) return false;
-  const providedKey = req.headers["x-admin-key"] || "";
+async function isAdminRequest(req) {
+  const providedKey = String(req.headers["x-admin-key"] || "");
+  const keyMatches =
+    Boolean(ADMIN_KEY) &&
+    providedKey.length === ADMIN_KEY.length &&
+    crypto.timingSafeEqual(Buffer.from(providedKey), Buffer.from(ADMIN_KEY));
 
-  if (providedKey.length !== ADMIN_KEY.length) return false;
+  if (keyMatches) {
+    return true;
+  }
 
-  return crypto.timingSafeEqual(
-    Buffer.from(providedKey),
-    Buffer.from(ADMIN_KEY),
-  );
+  // Fall back to a signed-in account flagged as admin (see setAdmin.js script).
+  const sessionUser = await helperController.getAuthenticatedUser(req);
+  return Boolean(sessionUser?.is_admin);
 }
 
 function getClientIp(req) {
@@ -1135,7 +1139,7 @@ async function updateAccount(req, res) {
 const ADMIN_KEY = String(process.env.ADMIN_KEY || "").trim();
 
 async function getPendingAccounts(req, res) {
-  if (!isAdminRequest(req)) {
+  if (!(await isAdminRequest(req))) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "Forbidden" }));
@@ -1162,7 +1166,7 @@ async function getPendingAccounts(req, res) {
 }
 
 async function getPendingAccountRequests(req, res) {
-  if (!isAdminRequest(req)) {
+  if (!(await isAdminRequest(req))) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "Forbidden" }));
@@ -1191,8 +1195,8 @@ async function getPendingAccountRequests(req, res) {
   }
 }
 
-function approveAccountRequest(req, res) {
-  if (!isAdminRequest(req)) {
+async function approveAccountRequest(req, res) {
+  if (!(await isAdminRequest(req))) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "Forbidden" }));
@@ -1296,8 +1300,8 @@ function approveAccountRequest(req, res) {
   })();
 }
 
-function rejectAccountRequest(req, res) {
-  if (!isAdminRequest(req)) {
+async function rejectAccountRequest(req, res) {
+  if (!(await isAdminRequest(req))) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "Forbidden" }));
@@ -1346,8 +1350,8 @@ function rejectAccountRequest(req, res) {
   })();
 }
 
-function approveAccount(req, res) {
-  if (!isAdminRequest(req)) {
+async function approveAccount(req, res) {
+  if (!(await isAdminRequest(req))) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "Forbidden" }));
@@ -1387,8 +1391,8 @@ function approveAccount(req, res) {
   });
 }
 
-function rejectAccount(req, res) {
-  if (!isAdminRequest(req)) {
+async function rejectAccount(req, res) {
+  if (!(await isAdminRequest(req))) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "Forbidden" }));
@@ -1434,7 +1438,7 @@ function rejectAccount(req, res) {
 }
 
 async function getSecurityOverview(req, res) {
-  if (!isAdminRequest(req)) {
+  if (!(await isAdminRequest(req))) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "Forbidden" }));
@@ -1454,7 +1458,7 @@ async function getSecurityOverview(req, res) {
 }
 
 async function clearSecurityState(req, res) {
-  if (!isAdminRequest(req)) {
+  if (!(await isAdminRequest(req))) {
     res.statusCode = 403;
     res.setHeader("Content-Type", "application/json");
     res.end(JSON.stringify({ error: "Forbidden" }));

@@ -313,16 +313,16 @@ export default function Upload() {
   }, [videoUploadId, videoStatus]);
 
   return (
-    <main className="min-h-[calc(100vh-5rem)] bg-slate-950 px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
+    <main className="min-h-[calc(100vh-5rem)] bg-transparent px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
       <section className="mx-auto grid w-full max-w-5xl gap-8 lg:grid-cols-2">
-        <div className="rounded-4xl border border-white/10 bg-white/92 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+        <div className="rounded-4xl border border-sky-300/20 bg-slate-900/40 p-8 text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
             Uploads
           </p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-900">
+          <h1 className="mt-2 text-3xl font-semibold text-slate-100">
             Upload Files
           </h1>
-          <p className="mt-3 text-sm leading-7 text-slate-500">
+          <p className="mt-3 text-sm leading-7 text-slate-400">
             Add county documents for search and retrieval.
           </p>
 
@@ -331,7 +331,7 @@ export default function Upload() {
               type="file"
               multiple
               accept={DOCUMENT_ACCEPT}
-              className="block w-full cursor-pointer rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-black shadow-sm transition file:mr-4 file:rounded-full file:border-0 file:bg-slate-700 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-slate-400"
+              className="block w-full cursor-pointer rounded-2xl border border-dashed border-cyan-200/30 bg-[#0b2233] px-4 py-6 text-sm text-slate-100 shadow-sm transition file:mr-4 file:rounded-full file:border-0 file:bg-cyan-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-cyan-200/50"
               onChange={(e) => {
                 const selectedFiles = e.target.files
                   ? Array.from(e.target.files)
@@ -344,11 +344,11 @@ export default function Upload() {
             />
 
             {files.length > 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="mb-2 text-sm font-semibold text-slate-700">
+              <div className="rounded-2xl border border-cyan-200/15 bg-[#0b2233]/75 p-4">
+                <p className="mb-2 text-sm font-semibold text-slate-200">
                   Selected Files ({files.length})
                 </p>
-                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm text-slate-600">
+                <ul className="max-h-40 space-y-1 overflow-y-auto text-sm text-slate-400">
                   {files.map((file) => (
                     <li
                       key={`${file.name}-${file.size}-${file.lastModified}`}
@@ -365,20 +365,20 @@ export default function Upload() {
           <button
             onClick={uploadFile}
             disabled={uploadingDocuments}
-            className="mt-6 w-full rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700"
+            className="mt-6 w-full rounded-2xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {uploadingDocuments ? "Uploading..." : "Upload Files"}
           </button>
         </div>
 
-        <div className="rounded-4xl border border-white/10 bg-white/92 p-8 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+        <div className="rounded-4xl border border-sky-300/20 bg-slate-900/40 p-8 text-slate-100 shadow-[0_0_0_1px_rgba(148,163,184,0.15),0_0_30px_rgba(14,165,233,0.10)] backdrop-blur-xl sm:p-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
             Video + Whisper
           </p>
-          <h2 className="mt-2 text-3xl font-semibold text-slate-900">
+          <h2 className="mt-2 text-3xl font-semibold text-slate-100">
             Upload Video
           </h2>
-          <p className="mt-3 text-sm leading-7 text-slate-500">
+          <p className="mt-3 text-sm leading-7 text-slate-400">
             Upload a county meeting video to transcribe and index with Whisper.
           </p>
 
@@ -386,7 +386,7 @@ export default function Upload() {
             <input
               type="file"
               accept={VIDEO_ACCEPT}
-              className="block w-full cursor-pointer rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-black shadow-sm transition file:mr-4 file:rounded-full file:border-0 file:bg-slate-700 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-slate-400"
+              className="block w-full cursor-pointer rounded-2xl border border-dashed border-cyan-200/30 bg-[#0b2233] px-4 py-6 text-sm text-slate-100 shadow-sm transition file:mr-4 file:rounded-full file:border-0 file:bg-cyan-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:border-cyan-200/50"
               onChange={(e) => {
                 const selected = e.target.files?.[0] || null;
                 setVideoFile(selected);
@@ -395,17 +395,17 @@ export default function Upload() {
             />
 
             {videoFile && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div className="rounded-2xl border border-cyan-200/15 bg-[#0b2233]/75 p-4 text-sm text-slate-200">
                 <p className="font-semibold">Selected Video</p>
                 <p className="mt-1 truncate">{videoFile.name}</p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-400">
                   {formatFileSizeMb(videoFile.size)}
                 </p>
               </div>
             )}
 
             {videoUploadId && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div className="rounded-2xl border border-cyan-200/15 bg-[#0b2233]/75 p-4 text-sm text-slate-200">
                 <p>
                   <span className="font-semibold">Video ID:</span>{" "}
                   {videoUploadId}
@@ -415,15 +415,15 @@ export default function Upload() {
                   {videoStatus || "pending"}
                 </p>
                 {videoTranscriptError && (
-                  <p className="mt-2 text-red-700">{videoTranscriptError}</p>
+                  <p className="mt-2 text-red-400">{videoTranscriptError}</p>
                 )}
               </div>
             )}
 
             {videoTranscript?.text && (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div className="rounded-2xl border border-cyan-200/15 bg-[#0b2233]/75 p-4 text-sm text-slate-200">
                 <p className="font-semibold">Transcript Preview</p>
-                <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-slate-600">
+                <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-slate-400">
                   {videoTranscript.text}
                 </p>
               </div>
@@ -433,7 +433,7 @@ export default function Upload() {
           <button
             onClick={uploadVideo}
             disabled={uploadingVideo}
-            className="mt-6 w-full rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700"
+            className="mt-6 w-full rounded-2xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {uploadingVideo ? "Uploading Video..." : "Upload Video"}
           </button>

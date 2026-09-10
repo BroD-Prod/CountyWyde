@@ -1,6 +1,7 @@
 const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const {
   readChunks,
   insertChunks,
@@ -34,7 +35,8 @@ function assertEmbeddingsPresent(records) {
 }
 
 function createId() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  // random (not time-based) so document/video ids can't be enumerated or guessed
+  return crypto.randomUUID();
 }
 
 async function persistOriginalPdf({
