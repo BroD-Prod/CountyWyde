@@ -89,6 +89,8 @@ export default function Home() {
   >([]);
   const { showAlert } = useAlert();
   const isEmbed = searchParams.get("embed") === "1";
+  const isEmbedMisconfigured =
+    isEmbed && (!searchParams.get("state") || !searchParams.get("county"));
 
   useEffect(() => {
     const urlState = searchParams.get("state") ?? "";
@@ -170,6 +172,9 @@ export default function Home() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(isEmbed && document.referrer
+            ? { "X-Embed-Referrer": document.referrer }
+            : {}),
         },
         credentials: "include",
         body: JSON.stringify({ prompt: search, county, state }),
@@ -298,75 +303,79 @@ export default function Home() {
             </>
           )}
 
-          <div className="space-y-4">
-            <select
-              className={
-                isEmbed
-                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-              }
-              value={state}
-              onChange={(e) => {
-                setState(e.target.value);
-                setCounty("");
-              }}
-            >
-              <option value="">Select State</option>
-              {states.map((s) => (
-                <option key={s.abbreviation} value={s.abbreviation}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+          {isEmbedMisconfigured ? (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              This search widget is missing a state/county configuration.
+              Add <code>state</code> and <code>county</code> parameters to the
+              embed URL.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {!isEmbed && (
+                <select
+                  className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+                  value={state}
+                  onChange={(e) => {
+                    setState(e.target.value);
+                    setCounty("");
+                  }}
+                >
+                  <option value="">Select State</option>
+                  {states.map((s) => (
+                    <option key={s.abbreviation} value={s.abbreviation}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-            <select
-              className={
-                isEmbed
-                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
-                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-              }
-              value={county}
-              onChange={(e) => setCounty(e.target.value)}
-              disabled={!state}
-            >
-              <option value="">Select County</option>
-              {counties.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+              {!isEmbed && (
+                <select
+                  className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+                  value={county}
+                  onChange={(e) => setCounty(e.target.value)}
+                  disabled={!state}
+                >
+                  <option value="">Select County</option>
+                  {counties.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-            <input
-              className={
-                isEmbed
-                  ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-                  : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
-              }
-              placeholder="Search..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSearch();
+              <input
+                className={
+                  isEmbed
+                    ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+                    : "block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
                 }
-              }}
-            />
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleSearch();
+                  }
+                }}
+              />
 
-            <button
-              className={
-                isEmbed
-                  ? "flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
-                  : "flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
-              }
-              onClick={handleSearch}
-              disabled={isSearching}
-            >
-              {isSearching ? <Loading inline label="Searching..." /> : "Search"}
-            </button>
-          </div>
+              <button
+                className={
+                  isEmbed
+                    ? "flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                    : "flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-slate-700 via-slate-600 to-slate-800 px-4 py-3 font-semibold text-white shadow-lg shadow-slate-950/20 transition hover:from-slate-600 hover:to-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                }
+                onClick={handleSearch}
+                disabled={isSearching}
+              >
+                {isSearching ? <Loading inline label="Searching..." /> : "Search"}
+              </button>
+            </div>
+          )}
 
-          {!isEmbed && result && (
+          {result && (
             <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm leading-6 text-slate-800 shadow-sm">
               <p className="font-semibold text-slate-700">Result:</p>
               <p className="whitespace-pre-wrap">{result}</p>
