@@ -15,14 +15,16 @@ test("buildVideoTranscriptTimestampLink returns a timestamp and transcript link 
         id: "chunk-1",
         source: "County meeting",
         parsedType: "whisper_transcript",
-        structured: {
-            segments: [
-                { index: 0, start: 80, end: 95, text: "Intro" },
-                { index: 1, start: 110, end: 130, text: "Main discussion" },
-            ],
-        },
-        metadata: {
-            videoId: "video-123",
+        record: {
+            structured: {
+                segments: [
+                    { index: 0, start: 80, end: 95, text: "Intro" },
+                    { index: 1, start: 110, end: 130, text: "Main discussion" },
+                ],
+            },
+            metadata: {
+                videoId: "video-123",
+            },
         },
     });
 
@@ -53,14 +55,16 @@ test("buildVideoTranscriptTimestampLink normalizes millisecond offsets", () => {
         id: "chunk-3",
         source: "County meeting",
         parsedType: "whisper_transcript",
-        structured: {
-            segments: [
-                { index: 0, start: 610000, end: 620000, text: "Budget discussion" },
-                { index: 1, start: 695000, end: 710000, text: "Road repairs" },
-            ],
-        },
-        metadata: {
-            videoId: "video-456",
+        record: {
+            structured: {
+                segments: [
+                    { index: 0, start: 610000, end: 620000, text: "Budget discussion" },
+                    { index: 1, start: 695000, end: 710000, text: "Road repairs" },
+                ],
+            },
+            metadata: {
+                videoId: "video-456",
+            },
         },
     });
 
