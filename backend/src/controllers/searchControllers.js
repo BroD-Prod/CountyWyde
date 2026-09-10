@@ -18,28 +18,36 @@ const LEXICAL_RRF_WEIGHT = 0.45;
 const MAX_EVIDENCE_CHUNKS = 8;
 const MAX_EVIDENCE_PER_SOURCE = 3;
 
-// Looks up the single state/county an embedding partner's origin is
-// permitted to search, via the admin-managed embed_origins table.
-async function getEmbedRestriction(req) {
+// Determines whether this request came through an embed widget and, if so,
+// what state/county (if any) that embed origin is currently authorized for.
+//
+// A request with no X-Embed-Referrer header is not from an embed at all, so
+// isEmbed is false and no restriction applies. A request WITH that header
+// must resolve to an active (non-revoked) embed_origins row: an unknown,
+// malformed, or revoked origin fails closed (restriction: null, but
+// isEmbed: true) rather than silently granting unrestricted access — the
+// caller is responsible for rejecting the request when isEmbed is true but
+// restriction is null.
+async function resolveEmbedAccess(req) {
   const referrer = String(req.headers["x-embed-referrer"] || "").trim();
   if (!referrer) {
-    return null;
+    return { isEmbed: false, restriction: null };
   }
 
   let origin;
   try {
     origin = new URL(referrer).origin;
   } catch {
-    return null;
+    return { isEmbed: true, restriction: null };
   }
 
-  return (
-    (await db
-      .prepare(
-        "SELECT state, county FROM embed_origins WHERE origin = ? AND revoked = FALSE",
-      )
-      .get(origin)) || null
-  );
+  const restriction = await db
+    .prepare(
+      "SELECT state, county FROM embed_origins WHERE origin = ? AND revoked = FALSE",
+    )
+    .get(origin);
+
+  return { isEmbed: true, restriction: restriction || null };
 }
 
 function tokenize(text) {
@@ -461,19 +469,22 @@ async function postSearch(req, res) {
       return;
     }
 
-    const embedRestriction = await getEmbedRestriction(req);
-    if (
-      embedRestriction &&
-      (embedRestriction.state !== state ||
-        normalizeCounty(embedRestriction.county) !== county)
-    ) {
-      res.statusCode = 403;
-      res.end(
-        JSON.stringify({
-          error: "This embed is not authorized to search that county",
-        })
-      );
-      return;
+    const embedAccess = await resolveEmbedAccess(req);
+    if (embedAccess.isEmbed) {
+      const restriction = embedAccess.restriction;
+      if (
+        !restriction ||
+        restriction.state !== state ||
+        normalizeCounty(restriction.county) !== county
+      ) {
+        res.statusCode = 403;
+        res.end(
+          JSON.stringify({
+            error: "This embed is not authorized to search that county",
+          })
+        );
+        return;
+      }
     }
 
     if (!process.env.GEMINI_API_KEY) {
@@ -577,5 +588,5 @@ module.exports = {
   postSearch,
   buildVideoTranscriptTimestampLink,
   findPdfDocumentBySource,
-  getEmbedRestriction,
+  resolveEmbedAccess,
 };

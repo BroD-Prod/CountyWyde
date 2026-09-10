@@ -1,14 +1,38 @@
 require("dotenv").config();
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
 
 process.env.GEMINI_API_KEY = "test";
 
 const db = require("../src/lib/db");
 const {
     buildVideoTranscriptTimestampLink,
-    getEmbedRestriction,
+    resolveEmbedAccess,
+    postSearch,
 } = require("../src/controllers/searchControllers");
+
+function makeSearchRes() {
+    return {
+        statusCode: 200,
+        body: null,
+        setHeader() {},
+        end(data) {
+            this.body = data ? JSON.parse(data) : null;
+        },
+    };
+}
+
+async function callPostSearch(headers, payload) {
+    const req = new EventEmitter();
+    req.headers = headers;
+    const res = makeSearchRes();
+    const promise = postSearch(req, res);
+    req.emit("data", Buffer.from(JSON.stringify(payload)));
+    req.emit("end");
+    await promise;
+    return res;
+}
 
 test("buildVideoTranscriptTimestampLink returns a timestamp and transcript link for video sources", () => {
     const result = buildVideoTranscriptTimestampLink({
@@ -75,19 +99,26 @@ test("buildVideoTranscriptTimestampLink normalizes millisecond offsets", () => {
     ]);
 });
 
-test("getEmbedRestriction returns null when no X-Embed-Referrer header is present", async () => {
-    const result = await getEmbedRestriction({ headers: {} });
-    assert.equal(result, null);
+test("resolveEmbedAccess reports isEmbed: false when no X-Embed-Referrer header is present", async () => {
+    const result = await resolveEmbedAccess({ headers: {} });
+    assert.deepEqual(result, { isEmbed: false, restriction: null });
 });
 
-test("getEmbedRestriction returns null for an unregistered embed origin", async () => {
-    const result = await getEmbedRestriction({
+test("resolveEmbedAccess reports isEmbed: true with a null restriction for an unregistered embed origin", async () => {
+    const result = await resolveEmbedAccess({
         headers: { "x-embed-referrer": "https://unregistered-embed.example.com/page" },
     });
-    assert.equal(result, null);
+    assert.deepEqual(result, { isEmbed: true, restriction: null });
 });
 
-test("getEmbedRestriction returns the county for a registered, non-revoked origin, and null once revoked", async (t) => {
+test("resolveEmbedAccess reports isEmbed: true with a null restriction for a malformed referrer", async () => {
+    const result = await resolveEmbedAccess({
+        headers: { "x-embed-referrer": "not-a-valid-url" },
+    });
+    assert.deepEqual(result, { isEmbed: true, restriction: null });
+});
+
+test("resolveEmbedAccess returns the county for a registered, non-revoked origin, and a null restriction once revoked", async (t) => {
     const origin = `https://test-embed-${Date.now()}.example.com`;
     let insertedId = null;
 
@@ -106,15 +137,61 @@ test("getEmbedRestriction returns the county for a registered, non-revoked origi
         .get("Test Partner", origin, "IN", "Pulaski", Date.now());
     insertedId = inserted.id;
 
-    const restriction = await getEmbedRestriction({
+    const active = await resolveEmbedAccess({
         headers: { "x-embed-referrer": `${origin}/widget` },
     });
-    assert.deepEqual(restriction, { state: "IN", county: "Pulaski" });
+    assert.deepEqual(active, {
+        isEmbed: true,
+        restriction: { state: "IN", county: "Pulaski" },
+    });
 
     await db.prepare("UPDATE embed_origins SET revoked = TRUE WHERE id = ?").run(insertedId);
 
-    const afterRevoke = await getEmbedRestriction({
+    const afterRevoke = await resolveEmbedAccess({
         headers: { "x-embed-referrer": `${origin}/widget` },
     });
-    assert.equal(afterRevoke, null);
+    assert.deepEqual(afterRevoke, { isEmbed: true, restriction: null });
+});
+
+// Regression test for a real bug: revoking an embed origin used to make
+// postSearch treat the request as unrestricted (able to search ANY county)
+// instead of rejecting it, because a null restriction was only checked
+// together with a truthy embedRestriction. A revoked or unknown embed
+// origin must now be rejected outright.
+test("postSearch rejects a revoked embed origin instead of granting unrestricted access", async (t) => {
+    const origin = `https://test-embed-revoked-${Date.now()}.example.com`;
+    let insertedId = null;
+
+    t.after(async () => {
+        if (insertedId) {
+            await db.prepare("DELETE FROM embed_origins WHERE id = ?").run(insertedId);
+        }
+    });
+
+    const inserted = await db
+        .prepare(
+            `INSERT INTO embed_origins (label, origin, state, county, revoked, created_at)
+             VALUES (?, ?, ?, ?, TRUE, ?)
+             RETURNING id`,
+        )
+        .get("Revoked Partner", origin, "IN", "Pulaski", Date.now());
+    insertedId = inserted.id;
+
+    const res = await callPostSearch(
+        { "x-embed-referrer": `${origin}/widget` },
+        { prompt: "test", state: "IN", county: "Marion" },
+    );
+
+    assert.equal(res.statusCode, 403);
+    assert.match(res.body.error, /not authorized/);
+});
+
+test("postSearch rejects an unregistered embed origin instead of granting unrestricted access", async () => {
+    const res = await callPostSearch(
+        { "x-embed-referrer": "https://never-registered-embed.example.com/widget" },
+        { prompt: "test", state: "IN", county: "Marion" },
+    );
+
+    assert.equal(res.statusCode, 403);
+    assert.match(res.body.error, /not authorized/);
 });
