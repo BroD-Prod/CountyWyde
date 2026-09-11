@@ -5,6 +5,7 @@ const { searchByVector: milvusSearch } = require("../lib/vectorStore");
 const { readChunks } = require("../lib/uploadStore");
 const helperController = require("./helperController");
 const { normalizeCounty, isRegisteredState } = require("../lib/countyRegistry");
+const db = require("../lib/db");
 
 const genAi = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const MAX_JSON_BYTES = 1 * 1024 * 1024;
@@ -16,6 +17,38 @@ const VECTOR_RRF_WEIGHT = 1.2;
 const LEXICAL_RRF_WEIGHT = 0.45;
 const MAX_EVIDENCE_CHUNKS = 8;
 const MAX_EVIDENCE_PER_SOURCE = 3;
+
+// Determines whether this request came through an embed widget and, if so,
+// what state/county (if any) that embed origin is currently authorized for.
+//
+// A request with no X-Embed-Referrer header is not from an embed at all, so
+// isEmbed is false and no restriction applies. A request WITH that header
+// must resolve to an active (non-revoked) embed_origins row: an unknown,
+// malformed, or revoked origin fails closed (restriction: null, but
+// isEmbed: true) rather than silently granting unrestricted access — the
+// caller is responsible for rejecting the request when isEmbed is true but
+// restriction is null.
+async function resolveEmbedAccess(req) {
+  const referrer = String(req.headers["x-embed-referrer"] || "").trim();
+  if (!referrer) {
+    return { isEmbed: false, restriction: null };
+  }
+
+  let origin;
+  try {
+    origin = new URL(referrer).origin;
+  } catch {
+    return { isEmbed: true, restriction: null };
+  }
+
+  const restriction = await db
+    .prepare(
+      "SELECT state, county FROM embed_origins WHERE origin = ? AND revoked = FALSE",
+    )
+    .get(origin);
+
+  return { isEmbed: true, restriction: restriction || null };
+}
 
 function tokenize(text) {
   return (text || "")
@@ -436,6 +469,24 @@ async function postSearch(req, res) {
       return;
     }
 
+    const embedAccess = await resolveEmbedAccess(req);
+    if (embedAccess.isEmbed) {
+      const restriction = embedAccess.restriction;
+      if (
+        !restriction ||
+        restriction.state !== state ||
+        normalizeCounty(restriction.county) !== county
+      ) {
+        res.statusCode = 403;
+        res.end(
+          JSON.stringify({
+            error: "This embed is not authorized to search that county",
+          })
+        );
+        return;
+      }
+    }
+
     if (!process.env.GEMINI_API_KEY) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: "Missing GEMINI_API_KEY" }));
@@ -509,12 +560,12 @@ async function postSearch(req, res) {
         parsedType: item.parsedType || null,
         ...(videoTimestampLink
           ? {
-              timestamp: videoTimestampLink.timestamp,
-              timestampSeconds: videoTimestampLink.timestampSeconds,
-              transcriptSnippet: videoTimestampLink.transcriptSnippet,
-              transcriptSegments: videoTimestampLink.transcriptSegments,
-              videoId: videoTimestampLink.videoId,
-            }
+            timestamp: videoTimestampLink.timestamp,
+            timestampSeconds: videoTimestampLink.timestampSeconds,
+            transcriptSnippet: videoTimestampLink.transcriptSnippet,
+            transcriptSegments: videoTimestampLink.transcriptSegments,
+            videoId: videoTimestampLink.videoId,
+          }
           : {}),
       };
     });
@@ -537,4 +588,5 @@ module.exports = {
   postSearch,
   buildVideoTranscriptTimestampLink,
   findPdfDocumentBySource,
+  resolveEmbedAccess,
 };

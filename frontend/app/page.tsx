@@ -115,6 +115,9 @@ function HomePageContent() {
     { name: string; abbreviation: string }[]
   >([]);
   const { showAlert } = useAlert();
+  const isEmbed = searchParams.get("embed") === "1";
+  const isEmbedMisconfigured =
+    isEmbed && (!searchParams.get("state") || !searchParams.get("county"));
 
   const urlState = searchParams.get("state") ?? "";
   const urlCounty = searchParams.get("county") ?? "";
@@ -182,6 +185,9 @@ function HomePageContent() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(isEmbed && document.referrer
+            ? { "X-Embed-Referrer": document.referrer }
+            : {}),
         },
         credentials: "include",
         body: JSON.stringify({ prompt: search, county, state }),
@@ -280,75 +286,137 @@ function HomePageContent() {
   };
 
   return (
-    <main className="relative min-h-[calc(100vh-5rem)] px-4 py-10 text-slate-100 sm:px-6 lg:px-8">
-      <section className="mx-auto w-full max-w-2xl">
-        <div className="overflow-hidden rounded-3xl border border-slate-600/30 bg-[#071827]/90 p-6 text-slate-100 shadow-2xl shadow-slate-950/30 backdrop-blur-xl sm:p-8">
-          <div className="absolute inset-x-0 top-0 h-1 rounded-full bg-linear-to-r from-slate-600 via-slate-500 to-slate-600" />
-          <div className="mb-6 rounded-2xl">
-            <h2 className="mt-2 text-2xl font-semibold text-slate-100">
-              Search CountyWyde
-            </h2>
-          </div>
+    <main
+      className={
+        isEmbed
+          ? "min-h-screen bg-white px-3 py-4 text-slate-900"
+          : "relative min-h-[calc(100vh-5rem)] px-4 py-10 text-slate-100 sm:px-6 lg:px-8"
+      }
+    >
+      <section
+        className={
+          isEmbed ? "mx-auto w-full max-w-md" : "mx-auto w-full max-w-2xl"
+        }
+      >
+        <div
+          className={
+            isEmbed
+              ? "overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              : "overflow-hidden rounded-3xl border border-slate-600/30 bg-[#071827]/90 p-6 text-slate-100 shadow-2xl shadow-slate-950/30 backdrop-blur-xl sm:p-8"
+          }
+        >
+          {!isEmbed && (
+            <>
+              <div className="absolute inset-x-0 top-0 h-1 rounded-full bg-linear-to-r from-slate-600 via-slate-500 to-slate-600" />
+              <div className="mb-6 rounded-2xl">
+                <h2 className="mt-2 text-2xl font-semibold text-slate-100">
+                  Search CountyWyde
+                </h2>
+              </div>
+            </>
+          )}
 
-          <div className="space-y-4">
-            <select
-              className="block w-full rounded-2xl border border-slate-600/30 bg-[#0b2233] px-4 py-3 text-slate-100 shadow-sm outline-none transition hover:border-slate-600/50 focus:border-slate-500/70 focus:bg-[#0d2a3d]"
-              value={state}
-              onChange={(e) => {
-                setState(e.target.value);
-                setCounty("");
-              }}
-            >
-              <option value="">Select State</option>
-              {states.map((s) => (
-                <option key={s.abbreviation} value={s.abbreviation}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+          {isEmbedMisconfigured ? (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              This search widget is missing a state/county configuration.
+              Add <code>state</code> and <code>county</code> parameters to the
+              embed URL.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {!isEmbed && (
+                <select
+                  className="block w-full rounded-2xl border border-slate-600/30 bg-[#0b2233] px-4 py-3 text-slate-100 shadow-sm outline-none transition hover:border-slate-600/50 focus:border-slate-500/70 focus:bg-[#0d2a3d]"
+                  value={state}
+                  onChange={(e) => {
+                    setState(e.target.value);
+                    setCounty("");
+                  }}
+                >
+                  <option value="">Select State</option>
+                  {states.map((s) => (
+                    <option key={s.abbreviation} value={s.abbreviation}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-            <select
-              className="block w-full rounded-2xl border border-slate-600/30 bg-[#0b2233] px-4 py-3 text-slate-100 shadow-sm outline-none transition hover:border-slate-600/50 focus:border-slate-500/70 focus:bg-[#0d2a3d]"
-              value={county}
-              onChange={(e) => setCounty(e.target.value)}
-              disabled={!state}
-            >
-              <option value="">Select County</option>
-              {counties.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+              {!isEmbed && (
+                <select
+                  className="block w-full rounded-2xl border border-slate-600/30 bg-[#0b2233] px-4 py-3 text-slate-100 shadow-sm outline-none transition hover:border-slate-600/50 focus:border-slate-500/70 focus:bg-[#0d2a3d]"
+                  value={county}
+                  onChange={(e) => setCounty(e.target.value)}
+                  disabled={!state}
+                >
+                  <option value="">Select County</option>
+                  {counties.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              )}
 
-            <input
-              className="block w-full rounded-2xl border border-slate-600/30 bg-[#0b2233] px-4 py-3 text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-600/50 focus:border-slate-500/70 focus:bg-[#0d2a3d]"
-              placeholder="Search..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSearch();
+              <input
+                className={
+                  isEmbed
+                    ? "block w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-black shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-400 focus:border-slate-700 focus:ring-2 focus:ring-slate-200"
+                    : "block w-full rounded-2xl border border-slate-600/30 bg-[#0b2233] px-4 py-3 text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-slate-600/50 focus:border-slate-500/70 focus:bg-[#0d2a3d]"
                 }
-              }}
-            />
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleSearch();
+                  }
+                }}
+              />
 
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-500/50 bg-slate-600/15 px-4 py-3 font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={handleSearch}
-              disabled={isSearching}
-            >
-              {isSearching ? <Loading inline label="Searching..." /> : "Search"}
-            </button>
-          </div>
+              <button
+                className={
+                  isEmbed
+                    ? "flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                    : "flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-500/50 bg-slate-600/15 px-4 py-3 font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25 disabled:cursor-not-allowed disabled:opacity-60"
+                }
+                onClick={handleSearch}
+                disabled={isSearching}
+              >
+                {isSearching ? <Loading inline label="Searching..." /> : "Search"}
+              </button>
+            </div>
+          )}
 
           {result && (
-            <div className="mt-6 space-y-4 rounded-3xl border border-slate-600/20 bg-[#06131f]/80 p-4 text-left text-sm leading-6 text-slate-200 shadow-sm">
-              <p className="font-semibold text-slate-300">Result:</p>
+            <div
+              className={
+                isEmbed
+                  ? "mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-sm leading-6 text-slate-800 shadow-sm"
+                  : "mt-6 space-y-4 rounded-3xl border border-slate-600/20 bg-[#06131f]/80 p-4 text-left text-sm leading-6 text-slate-200 shadow-sm"
+              }
+            >
+              <p
+                className={
+                  isEmbed
+                    ? "font-semibold text-slate-700"
+                    : "font-semibold text-slate-300"
+                }
+              >
+                Result:
+              </p>
               <p className="whitespace-pre-wrap">{result}</p>
 
               <div className="space-y-3 rounded-2xl">
-                <p className="font-semibold text-slate-700">Sources:</p>
+                <p
+                  className={
+                    isEmbed
+                      ? "font-semibold text-slate-700"
+                      : "font-semibold text-slate-300"
+                  }
+                >
+                  Sources:
+                </p>
                 {sources.length === 0 && <p>none</p>}
 
                 {sources.map((source) => {
@@ -381,28 +449,68 @@ function HomePageContent() {
                   return (
                     <div
                       key={`${source.id}-${source.source}`}
-                      className="rounded-2xl border border-slate-600/20 bg-[#0b2233]/75 p-3"
+                      className={
+                        isEmbed
+                          ? "rounded-xl border border-slate-200 bg-white p-3"
+                          : "rounded-2xl border border-slate-600/20 bg-[#0b2233]/75 p-3"
+                      }
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl">
-                        <p className="text-sm font-medium text-slate-100">
+                      <div
+                        className={
+                          isEmbed
+                            ? "flex flex-wrap items-center justify-between gap-2"
+                            : "flex flex-wrap items-center justify-between gap-2 rounded-xl"
+                        }
+                      >
+                        <p
+                          className={
+                            isEmbed
+                              ? "text-sm font-medium text-slate-700"
+                              : "text-sm font-medium text-slate-100"
+                          }
+                        >
                           {source.source}
                         </p>
                         {transcriptHeaderTimestamp && (
-                          <details className="group rounded-xl border border-slate-600/20 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200">
+                          <details
+                            className={
+                              isEmbed
+                                ? "group rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                                : "group rounded-xl border border-slate-600/20 bg-slate-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200"
+                            }
+                          >
                             <summary className="cursor-pointer list-none">
                               Transcript at {transcriptHeaderTimestamp}
                             </summary>
-                            <div className="mt-3 space-y-2 rounded-xl border border-slate-600/20 bg-slate-950/70 p-3 text-sm font-normal text-slate-200">
+                            <div
+                              className={
+                                isEmbed
+                                  ? "mt-3 space-y-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-normal text-slate-700"
+                                  : "mt-3 space-y-2 rounded-xl border border-slate-600/20 bg-slate-950/70 p-3 text-sm font-normal text-slate-200"
+                              }
+                            >
                               {source.transcriptSegments?.length ? (
-                                <ul className="space-y-2 rounded-xl text-xs text-slate-300">
+                                <ul
+                                  className={
+                                    isEmbed
+                                      ? "space-y-2 text-xs text-slate-500"
+                                      : "space-y-2 rounded-xl text-xs text-slate-300"
+                                  }
+                                >
                                   {source.transcriptSegments.map(
                                     (segment, index) => (
                                       <li
                                         key={`${segment.start ?? index
                                           }-${index}`}
-                                        className="rounded-lg"
+                                        className={isEmbed ? "" : "rounded-lg"}
                                       >
-                                        <span className="font-semibold text-slate-100">
+                                        <span
+                                          className={
+                                            isEmbed
+                                              ? "font-semibold text-slate-600"
+                                              : "font-semibold text-slate-100"
+                                          }
+                                        >
                                           {formatTimestamp(segment.start)}
                                         </span>{" "}
                                         {segment.text}
@@ -424,7 +532,11 @@ function HomePageContent() {
                                 "noopener,noreferrer",
                               )
                             }
-                            className="rounded-xl border border-slate-500/50 bg-slate-600/15 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25"
+                            className={
+                              isEmbed
+                                ? "rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-600"
+                                : "rounded-xl border border-slate-500/50 bg-slate-600/15 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25"
+                            }
                           >
                             Open PDF
                           </button>
@@ -439,7 +551,11 @@ function HomePageContent() {
                                 "noopener,noreferrer",
                               )
                             }
-                            className="rounded-xl border border-slate-500/50 bg-slate-600/15 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25"
+                            className={
+                              isEmbed
+                                ? "rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                                : "rounded-xl border border-slate-500/50 bg-slate-600/15 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:border-slate-500/80 hover:bg-slate-600/25"
+                            }
                           >
                             Download Video
                           </button>
@@ -447,13 +563,25 @@ function HomePageContent() {
                       </div>
 
                       {!canPreviewPdf && !isVideo && (
-                        <p className="mt-2 rounded-lg text-xs text-slate-500">
+                        <p
+                          className={
+                            isEmbed
+                              ? "mt-2 text-xs text-slate-500"
+                              : "mt-2 rounded-lg text-xs text-slate-500"
+                          }
+                        >
                           Preview unavailable for this source.
                         </p>
                       )}
 
                       {source.excerpt && (
-                        <p className="mt-3 line-clamp-4 rounded-lg text-xs text-slate-600">
+                        <p
+                          className={
+                            isEmbed
+                              ? "mt-3 line-clamp-4 text-xs text-slate-600"
+                              : "mt-3 line-clamp-4 rounded-lg text-xs text-slate-600"
+                          }
+                        >
                           {source.excerpt}
                         </p>
                       )}
