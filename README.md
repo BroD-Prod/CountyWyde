@@ -6,6 +6,20 @@ CountyWyde is a county records search application with a public frontend and a b
 
 The backend OpenAPI specification is maintained in [backend/openapi.yaml](backend/openapi.yaml). It documents the authenticated account flows, upload endpoints, video processing routes, and public search contract used by the application.
 
+## Document integrations
+
+Signed-in, approved county accounts can keep their documents in sync from **Account → Integrations**:
+
+- **Monitor your website (no code):** register a page that lists documents, an RSS feed, a sitemap, or a direct file link. The backend checks it every 6 hours, daily, or weekly (`backend/src/lib/sourceCrawler.js`), ingests new PDF/DOCX/CSV/TXT/JSON files, and re-indexes files whose content changed. At most 25 new files are ingested per check, so large back-catalogs load over several runs.
+- **Developer API:** create a county API key and call `POST/GET/DELETE /api/v1/documents` with `Authorization: Bearer <key>`. Keys are stored hashed, scoped to the creator's county, and stop working if revoked or if the creator's account leaves that county.
+
+Environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DOCUMENT_MONITOR_ENABLED` | `true` | Set to `false` to stop the scheduled website checks on this instance. |
+| `INTEGRATIONS_ALLOW_PRIVATE_URLS` | `false` | Dev/test only (ignored in production): lets monitored URLs point at localhost. |
+
 ## Public frontend URL
 
 Use the public frontend URL, not the backend API endpoint.

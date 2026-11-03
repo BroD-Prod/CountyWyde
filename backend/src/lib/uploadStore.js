@@ -152,70 +152,80 @@ async function insertChunks(chunks) {
   });
 }
 
+// County names repeat across states (Washington County exists in ~30), so
+// every county-scoped write/lookup below also filters by state when one is
+// given. Callers acting for a signed-in user should always pass it.
+function scope(county, state) {
+  const clauses = ["LOWER(county) = LOWER(?)"];
+  const params = [county];
+  if (state) {
+    clauses.push("LOWER(state) = LOWER(?)");
+    params.push(state);
+  }
+  return { sql: clauses.join(" AND "), params };
+}
+
 /**
  * Update the stored embedding for a single chunk.
  * @param {string} id
  * @param {number[]} embedding
  * @param {string} county
+ * @param {string} [state]
  */
-async function updateChunkEmbedding(id, embedding, county) {
+async function updateChunkEmbedding(id, embedding, county, state) {
   const value = Array.isArray(embedding) ? JSON.stringify(embedding) : null;
+  const where = scope(county, state);
   await db
-    .prepare(
-      "UPDATE upload_chunks SET embedding = ? WHERE id = ? AND LOWER(county) = LOWER(?)",
-    )
-    .run(value, id, county);
+    .prepare(`UPDATE upload_chunks SET embedding = ? WHERE id = ? AND ${where.sql}`)
+    .run(value, id, ...where.params);
 }
 
 /**
- * Delete a single chunk by id, scoped to the given county.
+ * Delete a single chunk by id, scoped to the given county (and state).
  * @param {string} id
  * @param {string} county
+ * @param {string} [state]
  * @returns {number} rows deleted
  */
-async function deleteChunksById(id, county) {
+async function deleteChunksById(id, county, state) {
+  const where = scope(county, state);
   const result = await db
-    .prepare(
-      "DELETE FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)",
-    )
-    .run(id, county);
+    .prepare(`DELETE FROM upload_chunks WHERE id = ? AND ${where.sql}`)
+    .run(id, ...where.params);
   return result.changes;
 }
 
 /**
- * Delete all chunks matching source + county.
+ * Delete all chunks matching source within a county (and state).
  * @param {string} source
  * @param {string} county
+ * @param {string} [state]
  * @returns {number} rows deleted
  */
-async function deleteChunksBySource(source, county) {
+async function deleteChunksBySource(source, county, state) {
+  const where = scope(county, state);
   const result = await db
-    .prepare(
-      "DELETE FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)",
-    )
-    .run(source, county);
+    .prepare(`DELETE FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND ${where.sql}`)
+    .run(source, ...where.params);
   return result.changes;
 }
 
 /**
- * Return the ids of all chunks matching id or source within a county,
- * without deleting them. Used to collect Milvus ids before deletion.
+ * Return the ids of all chunks matching id or source within a county (and
+ * state), without deleting them. Used to collect Milvus ids before deletion.
  */
-async function findChunkIds({ id, source, county }) {
+async function findChunkIds({ id, source, county, state }) {
+  const where = scope(county, state);
   if (id) {
     const row = await db
-      .prepare(
-        "SELECT id FROM upload_chunks WHERE id = ? AND LOWER(county) = LOWER(?)",
-      )
-      .get(id, county);
+      .prepare(`SELECT id FROM upload_chunks WHERE id = ? AND ${where.sql}`)
+      .get(id, ...where.params);
     return row ? [row.id] : [];
   }
   if (source) {
     const rows = await db
-      .prepare(
-        "SELECT id FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND LOWER(county) = LOWER(?)",
-      )
-      .all(source, county);
+      .prepare(`SELECT id FROM upload_chunks WHERE LOWER(source) = LOWER(?) AND ${where.sql}`)
+      .all(source, ...where.params);
     return rows.map((r) => r.id);
   }
   return [];

@@ -2,11 +2,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAlert } from "../components/AlertProvider";
+import IntegrationsPanel from "../components/IntegrationsPanel";
 
 type SessionUser = {
   id: number;
   username: string;
   county: string;
+  isAdmin?: boolean;
   state?: {
     name: string;
     abbreviation: string;
@@ -141,32 +143,56 @@ export default function Account() {
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={handleAccountUpdate}>
-            <input
-              list="registered-counties"
-              placeholder="County"
-              value={county}
-              onChange={(e) => setCounty(e.target.value)}
-              className="block w-full rounded-2xl border border-cyan-200/20 bg-[#0b2233] px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-cyan-200/40 focus:border-cyan-200/70 focus:bg-[#0d2a3d]"
-            />
-            <select
-              value={state}
-              onChange={(e) => setState(e.target.value)}
-              className="block w-full rounded-2xl border border-cyan-200/20 bg-[#0b2233] px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition hover:border-cyan-200/40 focus:border-cyan-200/70 focus:bg-[#0d2a3d]"
-            >
-              <option value="">Select State</option>
-              {states.map((item) => (
-                <option key={item.id} value={item.abbreviation}>
-                  {item.name} ({item.abbreviation})
-                </option>
-              ))}
-            </select>
+            {user?.isAdmin ? (
+              <>
+                <input
+                  list="registered-counties"
+                  placeholder="County"
+                  value={county}
+                  onChange={(e) => setCounty(e.target.value)}
+                  className="block w-full rounded-2xl border border-cyan-200/20 bg-[#0b2233] px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition placeholder-slate-400 hover:border-cyan-200/40 focus:border-cyan-200/70 focus:bg-[#0d2a3d]"
+                />
+                <select
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                  className="block w-full rounded-2xl border border-cyan-200/20 bg-[#0b2233] px-4 py-3 text-sm text-slate-100 shadow-sm outline-none transition hover:border-cyan-200/40 focus:border-cyan-200/70 focus:bg-[#0d2a3d]"
+                >
+                  <option value="">Select State</option>
+                  {states.map((item) => (
+                    <option key={item.id} value={item.abbreviation}>
+                      {item.name} ({item.abbreviation})
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : (
+              // County/state decide whose documents an account can manage, so
+              // only an administrator can change them (enforced server-side too).
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+                <p>
+                  <span className="text-slate-400">County:</span>{" "}
+                  <span className="font-semibold text-slate-100">{user?.county}</span>
+                  {user?.state?.name ? (
+                    <>
+                      {", "}
+                      <span className="font-semibold text-slate-100">{user.state.name}</span>
+                    </>
+                  ) : null}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  To change your county or state, contact a CountyWyde administrator.
+                </p>
+              </div>
+            )}
             <div className="flex flex-col gap-3 pt-2 sm:flex-row">
-              <button
-                type="submit"
-                className="inline-flex flex-1 items-center justify-center rounded-2xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20"
-              >
-                Save Changes
-              </button>
+              {user?.isAdmin && (
+                <button
+                  type="submit"
+                  className="inline-flex flex-1 items-center justify-center rounded-2xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20"
+                >
+                  Save Changes
+                </button>
+              )}
               <a
                 href="/account/change-password"
                 className="inline-flex flex-1 items-center justify-center rounded-2xl border border-sky-300/50 bg-sky-500/15 px-4 py-3 font-semibold text-sky-100 transition hover:border-sky-200/80 hover:bg-sky-400/20"
@@ -183,6 +209,13 @@ export default function Account() {
             </div>
           </form>
         </div>
+
+        {/* Only reached once the session check above has succeeded. */}
+        {user && (
+          <div className="mt-10">
+            <IntegrationsPanel apiBase={API_BASE} />
+          </div>
+        )}
       </section>
     </main>
   );
