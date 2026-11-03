@@ -24,6 +24,8 @@ const {
   getCounties,
   getStates,
   updateAccount,
+  adminUpdateAccountCounty,
+  adminSearchAccounts,
   changePassword,
   requestPasswordReset,
   resetPasswordWithToken,
@@ -50,6 +52,25 @@ const {
   createEmbedOrigin,
   revokeEmbedOrigin,
 } = require("./src/controllers/embedOriginsControllers");
+
+const {
+  getIntegrations,
+  createApiKey,
+  revokeApiKey,
+  createSource,
+  updateSource,
+  deleteSource,
+  checkSourceNow,
+  getSourceDocuments,
+} = require("./src/controllers/integrationsControllers");
+
+const {
+  pushDocument,
+  listDocuments,
+  deleteDocument,
+} = require("./src/controllers/publicApiControllers");
+
+const { startDocumentMonitor } = require("./src/lib/sourceCrawler");
 
 const hostname = process.env.HOSTNAME || "127.0.0.1";
 const port = Number(process.env.PORT || 1337);
@@ -380,6 +401,16 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (path === "/admin/accounts" && req.method === "GET") {
+      await adminSearchAccounts(req, res);
+      return;
+    }
+
+    if (path === "/admin/accounts/county" && req.method === "PATCH") {
+      await adminUpdateAccountCounty(req, res);
+      return;
+    }
+
     if (path === "/admin/security" && req.method === "GET") {
       await getSecurityOverview(req, res);
       return;
@@ -410,6 +441,66 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // --- Document integrations (account page; signed-in county users only) ---
+    if (path === "/account/integrations" && req.method === "GET") {
+      await getIntegrations(req, res);
+      return;
+    }
+
+    if (path === "/account/integrations/api-keys" && req.method === "POST") {
+      await createApiKey(req, res);
+      return;
+    }
+
+    const apiKeyMatch = path.match(/^\/account\/integrations\/api-keys\/([^/]+)$/);
+    if (apiKeyMatch && req.method === "DELETE") {
+      await revokeApiKey(req, res, decodeURIComponent(apiKeyMatch[1]));
+      return;
+    }
+
+    if (path === "/account/integrations/sources" && req.method === "POST") {
+      await createSource(req, res);
+      return;
+    }
+
+    const sourceMatch = path.match(/^\/account\/integrations\/sources\/([^/]+)$/);
+    if (sourceMatch && req.method === "PATCH") {
+      await updateSource(req, res, decodeURIComponent(sourceMatch[1]));
+      return;
+    }
+    if (sourceMatch && req.method === "DELETE") {
+      await deleteSource(req, res, decodeURIComponent(sourceMatch[1]));
+      return;
+    }
+
+    const sourceCheckMatch = path.match(/^\/account\/integrations\/sources\/([^/]+)\/check$/);
+    if (sourceCheckMatch && req.method === "POST") {
+      await checkSourceNow(req, res, decodeURIComponent(sourceCheckMatch[1]));
+      return;
+    }
+
+    const sourceDocsMatch = path.match(/^\/account\/integrations\/sources\/([^/]+)\/documents$/);
+    if (sourceDocsMatch && req.method === "GET") {
+      await getSourceDocuments(req, res, decodeURIComponent(sourceDocsMatch[1]));
+      return;
+    }
+
+    // --- County push API (API-key auth, server-to-server) ---
+    if (path === "/api/v1/documents" && req.method === "POST") {
+      await pushDocument(req, res);
+      return;
+    }
+
+    if (path === "/api/v1/documents" && req.method === "GET") {
+      await listDocuments(req, res);
+      return;
+    }
+
+    if (path === "/api/v1/documents" && req.method === "DELETE") {
+      await deleteDocument(req, res);
+      return;
+    }
+
     res.statusCode = 404;
     res.end(JSON.stringify({ error: "Not Found" }));
   } catch {
@@ -420,4 +511,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, hostname, () => {
   console.log(`Server running at http://${hostname}:${port}/`);
+  startDocumentMonitor();
 });

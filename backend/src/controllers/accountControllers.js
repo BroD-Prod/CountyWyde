@@ -735,7 +735,7 @@ async function requestPasswordReset(req, res) {
       .prepare(
         `SELECT id, username
          FROM accounts
-         WHERE approved = 1 AND LOWER(username) = LOWER(?)
+         WHERE approved = TRUE AND LOWER(username) = LOWER(?)
          LIMIT 1`,
       )
       .get(normalizedEmail);
@@ -998,6 +998,7 @@ async function getSession(req, res) {
         id: authUser.id,
         username: authUser.username,
         county: authUser.county,
+        isAdmin: Boolean(authUser.is_admin),
         mustChangePassword: Boolean(authUser.must_change_password),
         state: {
           name: authUser.state_name,
@@ -1064,6 +1065,22 @@ async function getStates(req, res) {
   }
 }
 
+// Move an account to another county. Its API keys are revoked so a key issued
+// for the old county can't come back to life if the account later moves back.
+async function reassignAccountCounty(accountId, county, stateId) {
+  await db.transaction(async (tx) => {
+    await tx.run("UPDATE accounts SET county = ?, state_id = ? WHERE id = ?", [
+      county,
+      stateId,
+      accountId,
+    ]);
+    await tx.run(
+      "UPDATE county_api_keys SET revoked = TRUE WHERE account_id = ? AND revoked = FALSE",
+      [accountId],
+    );
+  });
+}
+
 async function updateAccount(req, res) {
   if (checkRateLimit(req, "update-account", UPDATE_RATE_LIMIT, res)) {
     return;
@@ -1109,9 +1126,28 @@ async function updateAccount(req, res) {
       return;
     }
 
-    await db
-      .prepare("UPDATE accounts SET county = ?, state_id = ? WHERE id = ?")
-      .run(selectedCounty, resolvedState.id, authUser.id);
+    // An account's county decides whose documents it can upload, delete and
+    // sync, so users can't move themselves; an admin reassigns them instead
+    // (PATCH /admin/accounts/county).
+    const isChange =
+      selectedCounty.toLowerCase() !== normalizeCounty(authUser.county).toLowerCase() ||
+      String(resolvedState.abbreviation).toUpperCase() !==
+        String(authUser.state_abbreviation || "").toUpperCase();
+    if (isChange && !authUser.is_admin) {
+      res.statusCode = 403;
+      res.setHeader("Content-Type", "application/json");
+      res.end(
+        JSON.stringify({
+          error:
+            "Your county and state can only be changed by a CountyWyde administrator. Please contact support.",
+        }),
+      );
+      return;
+    }
+
+    if (isChange) {
+      await reassignAccountCounty(authUser.id, selectedCounty, resolvedState.id);
+    }
 
     await db
       .prepare("UPDATE sessions SET expires_at = ? WHERE user_id = ?")
@@ -1136,6 +1172,126 @@ async function updateAccount(req, res) {
   }
 }
 
+// GET /admin/accounts?q=  — find accounts by email or county (admin only).
+async function adminSearchAccounts(req, res) {
+  if (!(await isAdminRequest(req))) {
+    res.statusCode = 403;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "Forbidden" }));
+    return;
+  }
+
+  try {
+    const query = String(
+      new URL(req.url, "http://localhost").searchParams.get("q") || "",
+    )
+      .trim()
+      .slice(0, 100);
+    if (query.length < 2) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Enter at least 2 characters to search" }));
+      return;
+    }
+
+    const pattern = `%${query.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    const rows = await db
+      .prepare(
+        `SELECT a.id, a.username, a.county, a.approved, a.is_admin,
+                st.name AS state_name, st.abbreviation AS state_abbreviation
+           FROM accounts a
+           LEFT JOIN states st ON st.id = a.state_id
+          WHERE a.username ILIKE ? OR a.county ILIKE ?
+          ORDER BY a.username ASC
+          LIMIT 25`,
+      )
+      .all(pattern, pattern);
+
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify({
+        accounts: rows.map((row) => ({
+          id: row.id,
+          username: row.username,
+          county: row.county,
+          approved: Boolean(row.approved),
+          isAdmin: Boolean(row.is_admin),
+          stateName: row.state_name || null,
+          stateAbbreviation: row.state_abbreviation || null,
+        })),
+      }),
+    );
+  } catch {
+    res.statusCode = 500;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "Failed to search accounts" }));
+  }
+}
+
+// PATCH /admin/accounts/county  { id, county, state }
+async function adminUpdateAccountCounty(req, res) {
+  if (!(await isAdminRequest(req))) {
+    res.statusCode = 403;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: "Forbidden" }));
+    return;
+  }
+
+  try {
+    const { id, county, state } = await helperController.parseJsonBody(
+      req,
+      MAX_JSON_BYTES,
+    );
+    const selectedCounty = normalizeCounty(county);
+    if (!id || !selectedCounty || !state) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "id, county and state are required" }));
+      return;
+    }
+    if (!isCountyFormatValid(selectedCounty)) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Please enter a valid county name" }));
+      return;
+    }
+    const resolvedState = await resolveState(state);
+    if (!resolvedState) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Please select a valid state" }));
+      return;
+    }
+
+    const account = await db
+      .prepare("SELECT id, username FROM accounts WHERE id = ?")
+      .get(id);
+    if (!account) {
+      res.statusCode = 404;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: "Account not found" }));
+      return;
+    }
+
+    await reassignAccountCounty(account.id, selectedCounty, resolvedState.id);
+
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify({
+        message: `Moved ${account.username} to ${selectedCounty}, ${resolvedState.abbreviation}`,
+        county: selectedCounty,
+        state: { name: resolvedState.name, abbreviation: resolvedState.abbreviation },
+      }),
+    );
+  } catch (error) {
+    res.statusCode = error.message === "Payload too large" ? 413 : 400;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ error: error.message || "Invalid JSON body" }));
+  }
+}
+
 const ADMIN_KEY = String(process.env.ADMIN_KEY || "").trim();
 
 async function getPendingAccounts(req, res) {
@@ -1151,7 +1307,7 @@ async function getPendingAccounts(req, res) {
         `SELECT a.id, a.username, a.county, st.name AS state_name, st.abbreviation AS state_abbreviation
              FROM accounts a
              JOIN states st ON st.id = a.state_id
-             WHERE a.approved = 0
+             WHERE a.approved = FALSE
              ORDER BY a.id ASC`,
       )
       .all();
@@ -1379,7 +1535,7 @@ async function approveAccount(req, res) {
         res.end(JSON.stringify({ error: "Account not found" }));
         return;
       }
-      await db.prepare("UPDATE accounts SET approved = 1 WHERE id = ?").run(id);
+      await db.prepare("UPDATE accounts SET approved = TRUE WHERE id = ?").run(id);
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ message: `Approved ${account.username}` }));
@@ -1413,7 +1569,7 @@ async function rejectAccount(req, res) {
       }
       const account = await db
         .prepare(
-          "SELECT id, username FROM accounts WHERE id = ? AND approved = 0",
+          "SELECT id, username FROM accounts WHERE id = ? AND approved = FALSE",
         )
         .get(id);
       if (!account) {
@@ -1497,6 +1653,8 @@ module.exports = {
   getCounties,
   getStates,
   updateAccount,
+  adminUpdateAccountCounty,
+  adminSearchAccounts,
   changePassword,
   requestPasswordReset,
   resetPasswordWithToken,

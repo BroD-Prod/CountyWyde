@@ -25,7 +25,7 @@ async function main() {
   let failed = 0;
   for (const item of pending) {
     if (Array.isArray(item.embedding) && item.embedding.length > 0) {
-      await updateChunkEmbedding(item.id, item.embedding, item.county);
+      await updateChunkEmbedding(item.id, item.embedding, item.county, item.state);
       updated += 1;
     } else {
       failed += 1;

@@ -20,6 +20,10 @@ const ROUTE_LIMITS = {
   "DELETE:/admin/reject": 30,
   "POST:/search": 60,
   "POST:/upload": 30,
+  "POST:/account/integrations/api-keys": 10,
+  "POST:/account/integrations/sources": 20,
+  "POST:/api/v1/documents": 60,
+  "DELETE:/api/v1/documents": 60,
 };
 
 let lastCleanupAt = 0;

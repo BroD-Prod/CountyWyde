@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAlert } from "../components/AlertProvider";
+import AdminMoveCounty from "../components/AdminMoveCounty";
 
 type PendingAccount = {
   id: number;
@@ -586,6 +587,12 @@ export default function AdminPage() {
             </div>
           )}
         </section>
+
+        <AdminMoveCounty
+          apiBase={API_BASE}
+          adminKey={adminKey}
+          onKeyError={() => setKeyError(true)}
+        />
 
         <section className="rounded-4xl border border-white/10 bg-white/92 p-6 text-slate-900 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
